@@ -4,6 +4,7 @@ const fileInput = document.getElementById("fileInput");
 
 let lastIBAN = "";
 let lastRef = "";
+let lastAmount = "";
 
 fileInput.addEventListener("change", (e) => {
   const file = e.target.files[0];
