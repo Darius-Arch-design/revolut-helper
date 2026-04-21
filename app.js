@@ -12,18 +12,25 @@ fileInput.addEventListener("change", (e) => {
 
   output.textContent = "Čitam sliku...";
 
-  codeReader.decodeFromImage(undefined, URL.createObjectURL(file))
-    .then(result => handleResult(result.text))
-    .catch(() => output.textContent = "Ne mogu očitati barkod.");
+  const reader = new FileReader();
+
+  reader.onload = function () {
+    const img = new Image();
+
+    img.onload = function () {
+      codeReader.decodeFromImageElement(img)
+        .then(result => handleResult(result.text))
+        .catch(err => {
+          console.error(err);
+          output.textContent = "Ne mogu očitati barkod sa slike.";
+        });
+    };
+
+    img.src = reader.result;
+  };
+
+  reader.readAsDataURL(file);
 });
-
-function startCamera() {
-  output.textContent = "Pokrećem kameru...";
-
-  codeReader.decodeFromVideoDevice(null, 'video', (result) => {
-    if (result) handleResult(result.text);
-  });
-}
 
 function handleResult(text) {
   const parsed = parseHUB3(text);
