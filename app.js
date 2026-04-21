@@ -8,12 +8,24 @@ const els = {
   warningsBox: document.getElementById("warningsBox"),
   rawBox: document.getElementById("rawBox"),
 
+  parserField: document.getElementById("parserField"),
+  currencyField: document.getElementById("currencyField"),
+  purposeField: document.getElementById("purposeField"),
+
+  payerField: document.getElementById("payerField"),
   recipientField: document.getElementById("recipientField"),
   ibanField: document.getElementById("ibanField"),
+  accountRawField: document.getElementById("accountRawField"),
   refField: document.getElementById("refField"),
   amountField: document.getElementById("amountField"),
   descField: document.getElementById("descField"),
   validationField: document.getElementById("validationField"),
+
+  payerAddress1Field: document.getElementById("payerAddress1Field"),
+  payerAddress2Field: document.getElementById("payerAddress2Field"),
+  recipientAddress1Field: document.getElementById("recipientAddress1Field"),
+  recipientAddress2Field: document.getElementById("recipientAddress2Field"),
+  headerField: document.getElementById("headerField"),
 
   startCameraBtn: document.getElementById("startCameraBtn"),
   stopCameraBtn: document.getElementById("stopCameraBtn"),
@@ -199,19 +211,22 @@ function parseHub3Strict(text) {
 
   const payment = emptyPayment();
 
+  payment.parser = "HUB3";
   payment.format = "HUB3";
   payment.header = fields[0];
+
   payment.currency = normalizeCurrency(fields[1]);
   payment.amount = parseHubAmount(fields[2]);
-  payment.payerName = cleanField(fields[3], 60);
-  payment.payerAddress1 = cleanField(fields[4], 60);
-  payment.payerAddress2 = cleanField(fields[5], 60);
+
+  payment.payerName = cleanField(fields[3], 70);
+  payment.payerAddress1 = cleanField(fields[4], 70);
+  payment.payerAddress2 = cleanField(fields[5], 70);
 
   payment.recipientName = cleanField(fields[6], 70);
   payment.recipientAddress1 = cleanField(fields[7], 70);
   payment.recipientAddress2 = cleanField(fields[8], 70);
 
-  payment.accountRaw = cleanField(fields[9], 40);
+  payment.accountRaw = cleanField(fields[9], 50);
   payment.iban = extractValidIbanFromField(payment.accountRaw);
 
   payment.model = normalizeModel(fields[10]);
@@ -227,18 +242,17 @@ function parseHub3Strict(text) {
 function splitHub3Fields(text) {
   let fields = text
     .replace(/\r/g, "\n")
-    .split("\n");
+    .split("\n")
+    .map(v => v.replace(/\u0000/g, "").trim());
 
   while (fields.length && fields[fields.length - 1] === "") {
     fields.pop();
   }
 
-  fields = fields.map(f => f.replace(/\u0000/g, "").trim());
-
   if (fields.length > 14) {
     const first13 = fields.slice(0, 13);
-    const rest = fields.slice(13).filter(Boolean).join(" ");
-    fields = [...first13, rest];
+    const mergedDescription = fields.slice(13).filter(Boolean).join(" ");
+    fields = [...first13, mergedDescription];
   }
 
   return fields;
@@ -252,23 +266,296 @@ function parseFallback(text) {
     .map(x => x.trim())
     .filter(Boolean);
 
+  payment.parser = "fallback";
   payment.format = "fallback";
+  payment.header = lines[0] && HUB3_HEADER_RE.test(lines[0]) ? lines[0] : "";
+
+  payment.currency = findCurrency(lines);
+  payment.amount = findAmountAnywhere(lines);
+
   payment.iban = findValidIbanAnywhere(lines);
+  payment.accountRaw = payment.iban || "";
+
   payment.model = findModel(lines);
   payment.referenceNumber = findReference(lines);
   payment.combinedReference = buildCombinedReference(payment.model, payment.referenceNumber);
-  payment.amount = findAmountAnywhere(lines);
+
+  payment.purposeCode = findPurposeCode(lines);
+  payment.payerName = findLikelyPayer(lines);
   payment.recipientName = findLikelyRecipient(lines, payment.iban);
+
+  payment.payerAddress1 = "";
+  payment.payerAddress2 = "";
+  payment.recipientAddress1 = "";
+  payment.recipientAddress2 = "";
+
   payment.description = findLikelyDescription(lines, payment);
 
   return payment;
 }
 
-/* ---------------- FIELD NORMALIZATION ---------------- */
+/* ---------------- MODELS ---------------- */
 
 function emptyPayment() {
   return {
+    parser: "",
     format: "",
     header: "",
     currency: "EUR",
-    amount: 
+    amount: "",
+
+    payerName: "",
+    payerAddress1: "",
+    payerAddress2: "",
+
+    recipientName: "",
+    recipientAddress1: "",
+    recipientAddress2: "",
+
+    accountRaw: "",
+    iban: "",
+
+    model: "",
+    referenceNumber: "",
+    combinedReference: "",
+
+    purposeCode: "",
+    description: "",
+    sepaText: ""
+  };
+}
+
+function emptyValidation() {
+  return {
+    errors: [],
+    warnings: [],
+    validForEpc: false
+  };
+}
+
+/* ---------------- NORMALIZATION ---------------- */
+
+function cleanField(value, maxLen = 140) {
+  return (value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .substring(0, maxLen);
+}
+
+function normalizeCurrency(value) {
+  const v = cleanField(value, 3).toUpperCase();
+  return v || "EUR";
+}
+
+function parseHubAmount(value) {
+  const digits = (value || "").replace(/[^\d]/g, "");
+  if (!digits) return "";
+
+  const cents = Number(digits);
+  if (!Number.isFinite(cents) || cents < 0) return "";
+
+  return (cents / 100).toFixed(2);
+}
+
+function normalizeModel(value) {
+  const raw = cleanField(value, 10).replace(/\s+/g, "").toUpperCase();
+  if (!raw) return "";
+  if (/^HR\d{2}$/.test(raw)) return raw;
+  if (/^\d{2}$/.test(raw)) return "HR" + raw;
+  return raw;
+}
+
+function normalizeReference(value) {
+  return cleanField(value, 60).replace(/\s+/g, "");
+}
+
+function normalizePurposeCode(value) {
+  const v = cleanField(value, 10).replace(/\s+/g, "").toUpperCase();
+  return /^[A-Z0-9]{4}$/.test(v) ? v : "";
+}
+
+function buildCombinedReference(model, referenceNumber) {
+  if (model && referenceNumber) return `${model} ${referenceNumber}`;
+  return referenceNumber || model || "";
+}
+
+/* ---------------- VALIDATION ---------------- */
+
+function validatePayment(payment) {
+  const errors = [];
+  const warnings = [];
+
+  if (!payment.iban && payment.accountRaw) {
+    errors.push("Polje računa je pronađeno, ali ne sadrži valjan IBAN.");
+  }
+
+  if (!payment.iban && !payment.accountRaw) {
+    errors.push("IBAN primatelja nije pronađen.");
+  }
+
+  if (payment.iban && !validateIBAN(payment.iban)) {
+    errors.push("IBAN je pronađen, ali nije valjan.");
+  }
+
+  if (!payment.recipientName) {
+    errors.push("Naziv primatelja nije pronađen.");
+  }
+
+  if (!payment.amount) {
+    warnings.push("Iznos nije pronađen.");
+  }
+
+  if (!payment.combinedReference) {
+    warnings.push("Model i poziv nisu pronađeni.");
+  }
+
+  if (!payment.description) {
+    warnings.push("Opis plaćanja nije pronađen.");
+  }
+
+  return {
+    errors,
+    warnings,
+    validForEpc: errors.length === 0
+  };
+}
+
+function validateIBAN(iban) {
+  const value = (iban || "").replace(/\s+/g, "").toUpperCase();
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(value)) return false;
+
+  const rearranged = value.slice(4) + value.slice(0, 4);
+  let expanded = "";
+
+  for (const ch of rearranged) {
+    expanded += /[A-Z]/.test(ch) ? (ch.charCodeAt(0) - 55).toString() : ch;
+  }
+
+  let remainder = 0;
+  for (const digit of expanded) {
+    remainder = (remainder * 10 + Number(digit)) % 97;
+  }
+
+  return remainder === 1;
+}
+
+function extractValidIbanFromField(value) {
+  const compact = (value || "").replace(/\s+/g, "").toUpperCase();
+  const matches = compact.match(/[A-Z]{2}\d{2}[A-Z0-9]{10,30}/g) || [];
+  for (const candidate of matches) {
+    if (validateIBAN(candidate)) return candidate;
+  }
+  return "";
+}
+
+function findValidIbanAnywhere(lines) {
+  for (const line of lines) {
+    const found = extractValidIbanFromField(line);
+    if (found) return found;
+  }
+  return "";
+}
+
+/* ---------------- EPC ---------------- */
+
+function generateEpcPayload(payment) {
+  const iban = payment.iban.replace(/\s+/g, "").toUpperCase();
+  const name = sanitizeEpcText(payment.recipientName, 70);
+  const amount = payment.amount ? `EUR${Number(payment.amount).toFixed(2)}` : "";
+  const purpose = payment.purposeCode || "";
+
+  const structuredReference = isIso11649Reference(payment.referenceNumber)
+    ? payment.referenceNumber.replace(/\s+/g, "").toUpperCase()
+    : "";
+
+  const unstructuredText = structuredReference
+    ? buildUnstructuredText(payment.description, payment.purposeCode)
+    : buildUnstructuredText(
+        [payment.combinedReference, payment.purposeCode, payment.description].filter(Boolean).join(" "),
+        ""
+      );
+
+  return [
+    "BCD",
+    "002",
+    "1",
+    "SCT",
+    "",
+    name,
+    iban,
+    amount,
+    purpose,
+    structuredReference,
+    sanitizeEpcText(unstructuredText, 140),
+    ""
+  ].join("\n");
+}
+
+function isIso11649Reference(value) {
+  const ref = (value || "").replace(/\s+/g, "").toUpperCase();
+  return /^RF\d{2}[A-Z0-9]{1,21}$/.test(ref);
+}
+
+function buildUnstructuredText(primary, secondary) {
+  return [primary, secondary]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sanitizeEpcText(value, maxLen) {
+  return (value || "")
+    .replace(/[\u0000-\u001F]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .substring(0, maxLen);
+}
+
+/* ---------------- FALLBACK HELPERS ---------------- */
+
+function findCurrency(lines) {
+  for (const line of lines) {
+    const compact = line.replace(/\s+/g, "").toUpperCase();
+    if (compact === "EUR" || compact === "HRK") return compact;
+  }
+  return "EUR";
+}
+
+function findAmountAnywhere(lines) {
+  for (const line of lines) {
+    const digitsOnly = line.replace(/[^\d]/g, "");
+    if (/^\d{10,15}$/.test(digitsOnly)) {
+      const parsed = parseHubAmount(digitsOnly);
+      if (parsed) return parsed;
+    }
+
+    const m = line.match(/\b\d{1,3}(?:[.\s]\d{3})*(?:[.,]\d{2})\b/);
+    if (m) return normalizeDecimalAmount(m[0]);
+  }
+  return "";
+}
+
+function normalizeDecimalAmount(input) {
+  const raw = input.replace(/\s/g, "");
+
+  if (raw.includes(",") && raw.includes(".")) {
+    return raw.replace(/\./g, "").replace(",", ".");
+  }
+
+  if (raw.includes(",")) return raw.replace(",", ".");
+  return raw;
+}
+
+function findModel(lines) {
+  for (const line of lines) {
+    const compact = line.replace(/\s+/g, "").toUpperCase();
+    if (/^HR\d{2}$/.test(compact)) return compact;
+    if (/^\d{2}$/.test(compact)) return "HR" + compact;
+  }
+  return "";
+}
+
+function findReference(lines) {
+  for (const line of lines) {
+    const candidate = line.replace(/\s+/g, 
