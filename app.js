@@ -142,6 +142,13 @@ function generateEPC() {
     reference
   ].join("\n");
 }
+const sepaText =
+`IBAN: ${lastIBAN}
+NAME: PRIMATELJ
+REFERENCE: ${lastRef}
+AMOUNT: ${lastAmount ? lastAmount + " EUR" : ""}`;
+
+window.sepaText = sepaText;
 /* ---------------- IBAN VALIDATION ---------------- */
 
 function validateIBAN(iban) {
