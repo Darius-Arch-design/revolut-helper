@@ -1,104 +1,352 @@
 <!DOCTYPE html>
 <html lang="hr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SEPA Scan</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0f766e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
 
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+  <script src="https://unpkg.com/@zxing/library@latest"></script>
 
-<title>SEPA Scan</title>
+  <style>
+    :root {
+      --bg: #f3f6f8;
+      --card: #ffffff;
+      --card-2: #f8fafc;
+      --text: #0f172a;
+      --muted: #475569;
+      --border: #dbe3ea;
+      --primary: #0f766e;
+      --primary-hover: #115e59;
+      --danger: #b91c1c;
+      --ok: #166534;
+      --warn: #b45309;
+      --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      --radius: 16px;
+    }
 
-<link rel="manifest" href="manifest.json">
+    * {
+      box-sizing: border-box;
+    }
 
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
-<link rel="apple-touch-icon" href="icon-192.png">
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #eef5f7 0%, #f8fbfc 100%);
+      padding: 16px;
+    }
 
-<script src="https://unpkg.com/@zxing/library@latest"></script>
+    .app {
+      max-width: 920px;
+      margin: 0 auto;
+    }
 
-<style>
-body {
-  font-family: Arial;
-  background: #f5f5f5;
-  text-align: center;
-  padding: 20px;
-}
+    .hero {
+      margin-bottom: 16px;
+    }
 
-button {
-  padding: 12px;
-  margin: 6px;
-  font-size: 16px;
-}
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
 
-#output {
-  background: white;
-  padding: 15px;
-  margin-top: 20px;
-  border-radius: 10px;
-  text-align: left;
-  white-space: pre-wrap;
-}
-</style>
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 20px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    button,
+    .file-label {
+      appearance: none;
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 15px;
+      cursor: pointer;
+      background: #e8eef2;
+      color: var(--text);
+      transition: 0.2s ease;
+      min-height: 44px;
+    }
+
+    button:hover,
+    .file-label:hover {
+      background: #dde7ec;
+    }
+
+    button.primary {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    button.primary:hover {
+      background: var(--primary-hover);
+    }
+
+    button.danger {
+      background: #fee2e2;
+      color: var(--danger);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    video {
+      width: 100%;
+      max-width: 420px;
+      border-radius: 14px;
+      background: #0f172a;
+      margin-top: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .status {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: var(--card-2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .status.ok {
+      background: #ecfdf5;
+      border-color: #bbf7d0;
+      color: var(--ok);
+    }
+
+    .status.warn {
+      background: #fffbeb;
+      border-color: #fde68a;
+      color: var(--warn);
+    }
+
+    .status.err {
+      background: #fef2f2;
+      border-color: #fecaca;
+      color: var(--danger);
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    .field {
+      background: var(--card-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .field-label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .field-value {
+      font-size: 15px;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+
+    .mono {
+      font-family: Consolas, Monaco, monospace;
+    }
+
+    #qrContainer {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 240px;
+      border: 1px dashed var(--border);
+      border-radius: 14px;
+      background: #fff;
+      padding: 12px;
+    }
+
+    .note {
+      margin-top: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    .list {
+      margin: 10px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .list li {
+      margin-bottom: 6px;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    @media (min-width: 860px) {
+      .grid {
+        grid-template-columns: 1.05fr 0.95fr;
+      }
+
+      .result-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+  </style>
 </head>
-
 <body>
+  <main class="app">
+    <section class="hero">
+      <h1>SEPA Scan</h1>
+      <p>
+        Skeniraj 2D barkod s hrvatske uplatnice, provjeri očitane podatke i generiraj EPC QR
+        te tekst za lakši unos u bankarsku aplikaciju.
+      </p>
+    </section>
 
-<h2>SEPA Scanner</h2>
+    <div class="grid">
+      <section class="card">
+        <h2>Ulaz</h2>
 
-<input type="file" id="fileInput" accept="image/*">
-<br><br>
+        <label for="fileInput" class="file-label">Odaberi sliku računa</label>
+        <input type="file" id="fileInput" accept="image/*" />
 
-<button onclick="startCamera()">Kamera</button>
+        <div class="actions">
+          <button id="startCameraBtn" class="primary" type="button">Pokreni kameru</button>
+          <button id="stopCameraBtn" class="danger" type="button" disabled>Zaustavi kameru</button>
+          <button id="rescanBtn" type="button">Novo skeniranje</button>
+        </div>
 
-<br><br>
+        <video id="video" autoplay muted playsinline></video>
 
-<video id="video" width="300"></video>
+        <div id="statusBox" class="status">Čekam skeniranje...</div>
 
-<div id="output">Čekam skeniranje...</div>
+        <p class="note">
+          Savjet: drži barkod ravno, bez odsjaja i dovoljno blizu kameri. Ako kamera ne očita,
+          probaj kroz upload slike.
+        </p>
+      </section>
 
-<div id="qrContainer" style="margin-top:20px; text-align:center;"></div>
+      <section class="card">
+        <h2>SEPA QR</h2>
+        <div id="qrContainer">
+          <span class="note">QR će se pojaviti nakon uspješnog i valjanog parsiranja.</span>
+        </div>
 
-<br>
+        <div class="actions">
+          <button id="copyIbanBtn" type="button" disabled>Kopiraj IBAN</button>
+          <button id="copyRefBtn" type="button" disabled>Kopiraj model + poziv</button>
+          <button id="copySepaBtn" type="button" disabled>Kopiraj SEPA podatke</button>
+          <button id="openRevolutBtn" class="primary" type="button">Otvori Revolut</button>
+        </div>
 
-<button onclick="copyIBAN()">Kopiraj IBAN</button>
-<button onclick="copyRef()">Kopiraj model + poziv</button>
-<button onclick="openRevolut()">Otvori Revolut</button>
-<button onclick="navigator.clipboard.writeText(window.sepaText)">
-  Kopiraj SEPA podatke
-</button>
+        <p class="note">
+          QR je pomoćni kanal. Ako ga Revolut ne prihvati, koristi kopiranje IBAN-a, iznosa i reference.
+        </p>
+      </section>
+    </div>
 
-<div style="
-  margin-top:20px;
-  padding:14px;
-  border:1px solid #e5e5e5;
-  border-radius:10px;
-  background:#fff;
-  font-size:14px;
-  line-height:1.5;
-">
+    <section class="card" style="margin-top: 16px;">
+      <h2>Očitani podaci</h2>
 
-  <h3 style="margin-top:0; font-size:16px;">
-    Upute za plaćanje računa putem Revoluta
-  </h3>
+      <div class="result-grid">
+        <div class="field">
+          <span class="field-label">Primatelj</span>
+          <div id="recipientField" class="field-value">—</div>
+        </div>
 
-  <p><b>1. Pokretanje novog plaćanja</b><br>
-  Klikni na Plaćanja u donjem izborniku, zatim na + za novi prijenos.</p>
+        <div class="field">
+          <span class="field-label">IBAN</span>
+          <div id="ibanField" class="field-value mono">—</div>
+        </div>
 
-  <p><b>2. Odabir vrste plaćanja</b><br>
-  Odaberi Banka, zatim Poslovni.</p>
+        <div class="field">
+          <span class="field-label">Model + poziv</span>
+          <div id="refField" class="field-value mono">—</div>
+        </div>
 
-  <p><b>3. Unos podataka primatelja</b><br>
-  Zalijepi IBAN i naziv primatelja, zatim dodaj primatelja.</p>
+        <div class="field">
+          <span class="field-label">Iznos</span>
+          <div id="amountField" class="field-value mono">—</div>
+        </div>
 
-  <p><b>4. Unos iznosa i reference</b><br>
-  Upiši iznos. U Reference polju zamijeni tekst s modelom i pozivom na broj.</p>
+        <div class="field">
+          <span class="field-label">Opis plaćanja</span>
+          <div id="descField" class="field-value">—</div>
+        </div>
 
-  <p><b>5. Potvrda</b><br>
-  Provjeri podatke i potvrdi plaćanje.</p>
+        <div class="field">
+          <span class="field-label">Status validacije</span>
+          <div id="validationField" class="field-value">—</div>
+        </div>
+      </div>
 
-</div>
+      <div id="warningsBox" class="status hidden" style="margin-top: 12px;"></div>
+      <div id="rawBox" class="status hidden" style="margin-top: 12px;"></div>
+    </section>
 
-<script src="app.js"></script>
+    <section class="card" style="margin-top: 16px;">
+      <h2>Ručno plaćanje u Revolutu</h2>
+      <ul class="list">
+        <li>Dodaj primatelja preko IBAN-a.</li>
+        <li>Provjeri ime primatelja prije potvrde.</li>
+        <li>Upiši iznos iz očitanih podataka.</li>
+        <li>U referencu zalijepi model i poziv ili SEPA tekst ako treba.</li>
+      </ul>
+    </section>
+  </main>
 
+  <script src="app.js"></script>
 </body>
 </html>
