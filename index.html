@@ -99,26 +99,3 @@ button {
 
 </body>
 </html>
-function generateEPC() {
-  if (!lastIBAN) return null;
-
-  const name = "PRIMATELJ"; // kasnije možemo izvući iz HUB-a
-  const iban = lastIBAN.replace(/\s/g, "");
-  const amount = lastAmount ? "EUR" + parseFloat(lastAmount).toFixed(2) : "";
-  const reference = lastRef || "";
-
-  // EPC QR format
-  const epc =
-`BCD
-001
-1
-SCT
-
-${name}
-${iban}
-EUR${amount ? parseFloat(lastAmount).toFixed(2) : ""}
- 
-${reference}`;
-
-  return epc;
-}
