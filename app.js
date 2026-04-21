@@ -135,6 +135,28 @@ ${reference}
 EUR${amount}`;
 }
 
+function handleResult(text) {
+  lastAmount = extractAmount(text);
+
+  const parsed = parseHUB3(text);
+  output.textContent = parsed;
+
+  if (lastIBAN) {
+    navigator.clipboard.writeText(lastIBAN);
+  }
+
+  const epc = generateEPC();
+
+  const qrDiv = document.getElementById("qrContainer");
+  qrDiv.innerHTML = "";
+
+  if (epc) {
+    QRCode.toCanvas(epc, { width: 220 }, function (err, canvas) {
+      if (!err) qrDiv.appendChild(canvas);
+    });
+  }
+}
+
 /* ---------------- IBAN VALIDATION ---------------- */
 
 function validateIBAN(iban) {
