@@ -1,12 +1,13 @@
 const codeReader = new ZXing.BrowserMultiFormatReader();
 const output = document.getElementById("output");
+const qrContainer = document.getElementById("qrContainer");
 const fileInput = document.getElementById("fileInput");
 
 let lastIBAN = "";
 let lastRef = "";
 let lastAmount = "";
 
-/* ---------------- INPUT (file) ---------------- */
+/* ---------------- INPUT FILE ---------------- */
 
 fileInput.addEventListener("change", (e) => {
   const file = e.target.files[0];
@@ -20,7 +21,7 @@ fileInput.addEventListener("change", (e) => {
     codeReader.decodeFromImageElement(img)
       .then(result => handleResult(result.text))
       .catch(() => {
-        output.textContent = "Ne mogu očitati barkod.";
+        output.textContent = "Ne mogu očitati QR/barcode.";
       });
   };
 
@@ -32,20 +33,21 @@ fileInput.addEventListener("change", (e) => {
 function startCamera() {
   output.textContent = "Pokrećem kameru...";
 
-  codeReader.decodeFromVideoDevice(null, 'video', (result) => {
+  codeReader.decodeFromVideoDevice(null, "video", (result) => {
     if (result) handleResult(result.text);
   });
 }
 
-/* ---------------- MAIN HANDLER ---------------- */
+/* ---------------- MAIN ---------------- */
 
 function handleResult(text) {
   lastAmount = extractAmount(text);
 
-  const parsed = parseHUB3(text);
+  const parsed = parseCode(text);
   output.textContent = parsed;
+
   console.log("IBAN RAW:", lastIBAN);
-console.log("IBAN CLEAN:", lastIBAN.replace(/\s/g, "").toUpperCase());
+  console.log("IBAN CLEAN:", lastIBAN.replace(/\s/g, "").toUpperCase());
 
   if (lastIBAN) {
     navigator.clipboard.writeText(lastIBAN);
@@ -53,135 +55,90 @@ console.log("IBAN CLEAN:", lastIBAN.replace(/\s/g, "").toUpperCase());
 
   const epc = generateEPC();
 
-  if (epc) {
-    const qrDiv = document.getElementById("qrContainer");
-    qrDiv.innerHTML = "";
+  qrContainer.innerHTML = "";
 
+  if (epc) {
     QRCode.toCanvas(epc, { width: 220 }, function (err, canvas) {
-      if (!err) qrDiv.appendChild(canvas);
+      if (!err) qrContainer.appendChild(canvas);
     });
   }
-
-  // ✔ FIX: SEPA uvijek ažuran u trenutku skeniranja
-  window.sepaText = generateSEPA();
 }
 
-/* ---------------- PARSER ---------------- */
+/* ---------------- PARSER (HR + global IBAN) ---------------- */
 
-function parseHUB3(text) {
-  const lines = text.replace(/\r/g,'').split('\n');
+function parseCode(text) {
+  const lines = text.replace(/\r/g, "").split("\n");
 
   let iban = null;
   let model = null;
   let poziv = null;
 
   for (let l of lines) {
-
-    const ib = l.match(/HR\d{2}[A-Z0-9]{17,}/);
+    // GLOBAL IBAN (HR, PR, DE, itd.)
+    const ib = l.match(/[A-Z]{2}\d{2}[A-Z0-9]{10,30}/);
     if (!iban && ib) iban = ib[0];
 
     const m = l.match(/^(HR)?(\d{2})$/);
     if (!model && m) model = "HR" + m[2];
 
-    const p = l.match(/^\d+(-\d+)+$/);
+    const p = l.match(/\d+(-\d+)+/);
     if (!poziv && p) poziv = p[0];
   }
 
-  if (!model || !poziv) {
-    return "Greška: ne mogu očitati podatke.";
-  }
-
   lastIBAN = iban || "";
-  lastRef = model + " " + poziv;
+  lastRef = model && poziv ? model + " " + poziv : "";
 
   let out = "";
 
   if (iban) {
     const valid = validateIBAN(iban);
     out += "IBAN: " + iban + (valid ? " ✔" : " ✖") + "\n\n";
+  } else {
+    out += "IBAN: nije pronađen\n\n";
   }
 
-  out += "Model + poziv: " + lastRef + "\n";
+  if (lastRef) {
+    out += "Model + poziv: " + lastRef + "\n";
+  }
 
   if (lastAmount) {
-    out += "Iznos: " + lastAmount + " EUR\n";
+    out += "Iznos: " + lastAmount + "\n";
   }
-
-  out += "\n";
-  out += sepaFormat();
 
   return out;
 }
 
-/* ---------------- SEPA FORMAT ---------------- */
-
-function sepaFormat() {
-  return `SEPA FORMAT
-IBAN: ${lastIBAN}
-REFERENCE: ${lastRef}`;
-}
-
-/* ---------------- SEPA (REAL-TIME) ---------------- */
-
-function generateSEPA() {
-  return `IBAN: ${lastIBAN}
-NAME: PRIMATELJ
-REFERENCE: ${lastRef}
-AMOUNT: ${lastAmount ? lastAmount + " EUR" : ""}`;
-}
-
-/* ---------------- EPC QR ---------------- */
+/* ---------------- EPC QR (ISPRAVAN SEPA FORMAT) ---------------- */
 
 function generateEPC() {
   if (!lastIBAN) return null;
 
   const iban = lastIBAN.replace(/\s/g, "").toUpperCase();
   const amount = lastAmount ? parseFloat(lastAmount).toFixed(2) : "";
-  const name = "PRIMATELJ";
   const reference = lastRef || "";
 
   return [
     "BCD",
-    "001",
+    "002",
     "1",
     "SCT",
     "",
-    name,
+    "PRIMATELJ",
     iban,
+    "EUR",
+    amount,
     "",
-    "EUR" + amount,
     "",
-    reference
+    reference,
+    ""
   ].join("\n");
-}
-
-/* ---------------- IBAN VALIDATION ---------------- */
-
-function validateIBAN(iban) {
-  const moved = iban.slice(4) + iban.slice(0,4);
-
-  let expanded = "";
-
-  for (let c of moved) {
-    if (/[A-Z]/.test(c)) expanded += (c.charCodeAt(0)-55);
-    else expanded += c;
-  }
-
-  return BigInt(expanded) % 97n === 1n;
 }
 
 /* ---------------- AMOUNT ---------------- */
 
 function extractAmount(text) {
-  const normal = text.match(/\b\d{1,3}([.,]\d{3})*([.,]\d{2})\b/);
-  if (normal) return normal[0].replace(',', '.');
-
-  const raw = text.match(/\b\d{7,}\b/);
-  if (raw) {
-    const num = parseInt(raw[0], 10);
-    if (!isNaN(num)) return (num / 100).toFixed(2);
-  }
-
+  const match = text.match(/\b\d{1,3}([.,]\d{3})*([.,]\d{2})\b/);
+  if (match) return match[0].replace(",", ".");
   return "";
 }
 
