@@ -44,6 +44,8 @@ function handleResult(text) {
 
   const parsed = parseHUB3(text);
   output.textContent = parsed;
+  console.log("IBAN RAW:", lastIBAN);
+console.log("IBAN CLEAN:", lastIBAN.replace(/\s/g, "").toUpperCase());
 
   if (lastIBAN) {
     navigator.clipboard.writeText(lastIBAN);
@@ -133,10 +135,10 @@ AMOUNT: ${lastAmount ? lastAmount + " EUR" : ""}`;
 function generateEPC() {
   if (!lastIBAN) return null;
 
-  const iban = lastIBAN.replace(/\s/g, "");
+  const iban = lastIBAN.replace(/\s/g, "").toUpperCase();
   const amount = lastAmount ? parseFloat(lastAmount).toFixed(2) : "";
-  const reference = lastRef || "";
   const name = "PRIMATELJ";
+  const reference = lastRef || "";
 
   return [
     "BCD",
@@ -144,12 +146,10 @@ function generateEPC() {
     "1",
     "SCT",
     "",
-    "",
     name,
     iban,
-    "EUR",
-    amount,
     "",
+    "EUR" + amount,
     "",
     reference
   ].join("\n");
