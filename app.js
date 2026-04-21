@@ -93,3 +93,7 @@ function copyIBAN() {
 function copyRef() {
   if (lastRef) navigator.clipboard.writeText(lastRef);
 }
+
+function openRevolut() {
+  window.location.href = "revolut://";
+}
