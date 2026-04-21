@@ -22,6 +22,8 @@ function startCamera() {
 }
 
 function handleResult(text) {
+  lastAmount = extractAmount(text);
+
   const parsed = parseHUB3(text);
   output.textContent = parsed;
 
@@ -85,7 +87,22 @@ function validateIBAN(iban) {
 
   return BigInt(expanded) % 97n === 1n;
 }
+function extractAmount(text) {
+  const normal = text.match(/\b\d{1,3}([.,]\d{3})*([.,]\d{2})\b/);
+  if (normal) {
+    return normal[0].replace(',', '.');
+  }
 
+  const raw = text.match(/\b\d{7,}\b/);
+  if (raw) {
+    const num = parseInt(raw[0], 10);
+    if (!isNaN(num)) {
+      return (num / 100).toFixed(2);
+    }
+  }
+
+  return "";
+}
 // COPY FUNKCIJE
 function copyIBAN() {
   if (lastIBAN) navigator.clipboard.writeText(lastIBAN);
