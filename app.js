@@ -28,6 +28,15 @@ function handleResult(text) {
   output.textContent = parsed;
 
   if (lastIBAN) navigator.clipboard.writeText(lastIBAN);
+  const epc = generateEPC();
+
+if (epc) {
+  const qrDiv = document.getElementById("qrContainer");
+  qrDiv.innerHTML = "";
+
+  QRCode.toCanvas(epc, { width: 200 }, function (err, canvas) {
+    if (!err) qrDiv.appendChild(canvas);
+  });
 }
 
 function parseHUB3(text) {
