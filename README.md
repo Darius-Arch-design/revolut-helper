@@ -1,2 +1,2 @@
 # revolut-helper
-Scan HUB3 barcodes from Croatian bills and instantly extract payment reference (model + poziv na broj) for quick use in apps like Revolut.
+Mobile scanner for Croatian HUB3 barcodes that extracts IBAN, payment model, and reference number with validation and SEPA formatting for instant copy and payment use.
