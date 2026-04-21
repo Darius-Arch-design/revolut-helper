@@ -4,10 +4,13 @@ const fileInput = document.getElementById("fileInput");
 
 let lastIBAN = "";
 let lastRef = "";
+let lastAmount = "";
 
 fileInput.addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
+
+  output.textContent = "Čitam sliku...";
 
   codeReader.decodeFromImage(undefined, URL.createObjectURL(file))
     .then(result => handleResult(result.text))
@@ -15,6 +18,8 @@ fileInput.addEventListener("change", (e) => {
 });
 
 function startCamera() {
+  output.textContent = "Pokrećem kameru...";
+
   codeReader.decodeFromVideoDevice(null, 'video', (result) => {
     if (result) handleResult(result.text);
   });
@@ -24,61 +29,81 @@ function handleResult(text) {
   const parsed = parseHUB3(text);
   output.textContent = parsed;
 
-  if (lastIBAN) navigator.clipboard.writeText(lastIBAN);
+  // auto copy IBAN ako postoji
+  if (lastIBAN) {
+    navigator.clipboard.writeText(lastIBAN);
+  }
 }
 
 function parseHUB3(text) {
-  const lines = text.replace(/\r/g,'').split('\n');
+  const lines = text.replace(/\r/g, '').split('\n');
 
   let iban = null;
   let model = null;
   let poziv = null;
+  let amount = null;
 
   for (let l of lines) {
+    l = l.trim();
 
+    // IBAN
     const ib = l.match(/HR\d{2}[A-Z0-9]{17,}/);
     if (!iban && ib) iban = ib[0];
 
+    // model
     const m = l.match(/^(HR)?(\d{2})$/);
     if (!model && m) model = "HR" + m[2];
 
+    // poziv na broj
     const p = l.match(/^\d+(-\d+)+$/);
     if (!poziv && p) poziv = p[0];
+
+    // iznos (npr 12.34 ili 12,34)
+    const a = l.match(/^\d+[.,]\d{2}$/);
+    if (!amount && a) {
+      amount = a[0].replace(',', '.');
+    }
   }
 
   if (!model || !poziv) {
-    return "Greška: ne mogu očitati podatke.";
+    return "Greška: ne mogu očitati model ili poziv na broj.";
   }
 
   lastIBAN = iban || "";
   lastRef = model + " " + poziv;
+  lastAmount = amount || "";
 
   let out = "";
 
   if (iban) {
     const valid = validateIBAN(iban);
-    out += "IBAN: " + iban + (valid ? " ✔" : " ✖") + "\n\n";
+    out += "IBAN: " + iban + (valid ? " ✔" : " ✖") + "\n";
   }
 
-  out += "Model + poziv: " + lastRef + "\n\n";
-  out += sepaFormat();
+  out += "Model + poziv: " + lastRef + "\n";
+
+  if (lastAmount) {
+    out += "Iznos: " + lastAmount + " EUR\n";
+  }
+
+  out += "\nSEPA FORMAT\n";
+  out += "IBAN: " + lastIBAN + "\n";
+  out += "REFERENCE: " + lastRef + "\n";
+
+  if (lastAmount) {
+    out += "AMOUNT: " + lastAmount + " EUR\n";
+  }
 
   return out;
 }
 
-function sepaFormat() {
-  return `SEPA FORMAT
-IBAN: ${lastIBAN}
-REFERENCE: ${lastRef}`;
-}
-
 // IBAN VALIDACIJA (MOD 97)
 function validateIBAN(iban) {
-  const moved = iban.slice(4) + iban.slice(0,4);
+  const moved = iban.slice(4) + iban.slice(0, 4);
 
   let expanded = "";
   for (let c of moved) {
-    if (/[A-Z]/.test(c)) expanded += (c.charCodeAt(0)-55);
+    if (/[A-Z]/.test(c)) expanded += (c.charCodeAt(0) - 55);
     else expanded += c;
   }
 
@@ -92,6 +117,4 @@ function copyIBAN() {
 
 function copyRef() {
   if (lastRef) navigator.clipboard.writeText(lastRef);
-}function openRevolut() {
-  window.location.href = "revolut://";
 }
