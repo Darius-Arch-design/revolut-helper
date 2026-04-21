@@ -63,7 +63,13 @@ function parseHUB3(text) {
     out += "IBAN: " + iban + (valid ? " ✔" : " ✖") + "\n\n";
   }
 
-  out += "Model + poziv: " + lastRef + "\n\n";
+  out += "Model + poziv: " + lastRef + "\n";
+
+  if (lastAmount) {
+    out += "Iznos: " + lastAmount + " EUR\n";
+  }
+
+  out += "\n";
   out += sepaFormat();
 
   return out;
