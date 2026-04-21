@@ -59,6 +59,9 @@ function handleResult(text) {
       if (!err) qrDiv.appendChild(canvas);
     });
   }
+
+  // ✔ FIX: SEPA uvijek ažuran u trenutku skeniranja
+  window.sepaText = generateSEPA();
 }
 
 /* ---------------- PARSER ---------------- */
@@ -116,6 +119,15 @@ IBAN: ${lastIBAN}
 REFERENCE: ${lastRef}`;
 }
 
+/* ---------------- SEPA (REAL-TIME) ---------------- */
+
+function generateSEPA() {
+  return `IBAN: ${lastIBAN}
+NAME: PRIMATELJ
+REFERENCE: ${lastRef}
+AMOUNT: ${lastAmount ? lastAmount + " EUR" : ""}`;
+}
+
 /* ---------------- EPC QR ---------------- */
 
 function generateEPC() {
@@ -142,13 +154,7 @@ function generateEPC() {
     reference
   ].join("\n");
 }
-const sepaText =
-`IBAN: ${lastIBAN}
-NAME: PRIMATELJ
-REFERENCE: ${lastRef}
-AMOUNT: ${lastAmount ? lastAmount + " EUR" : ""}`;
 
-window.sepaText = sepaText;
 /* ---------------- IBAN VALIDATION ---------------- */
 
 function validateIBAN(iban) {
