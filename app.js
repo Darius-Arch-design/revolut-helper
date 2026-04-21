@@ -2,13 +2,12 @@ const codeReader = new ZXing.BrowserMultiFormatReader();
 const output = document.getElementById("output");
 const fileInput = document.getElementById("fileInput");
 
-let lastResult = "";
+let lastIBAN = "";
+let lastRef = "";
 
 fileInput.addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
-
-  output.textContent = "Čitam sliku...";
 
   codeReader.decodeFromImage(undefined, URL.createObjectURL(file))
     .then(result => handleResult(result.text))
@@ -16,71 +15,81 @@ fileInput.addEventListener("change", (e) => {
 });
 
 function startCamera() {
-  output.textContent = "Pokrećem kameru...";
-
-  codeReader.decodeFromVideoDevice(null, 'video', (result, err) => {
-    if (result) {
-      if (result.text === lastResult) return;
-      lastResult = result.text;
-
-      handleResult(result.text);
-    }
+  codeReader.decodeFromVideoDevice(null, 'video', (result) => {
+    if (result) handleResult(result.text);
   });
 }
 
-function handleResult(rawText) {
-  const parsed = parseHUB3(rawText);
+function handleResult(text) {
+  const parsed = parseHUB3(text);
+  output.textContent = parsed;
 
-  if (parsed.startsWith("Greška")) {
-    output.textContent = parsed;
-    return;
-  }
-
-  output.textContent = "✔ " + parsed;
-
-  navigator.clipboard.writeText(parsed);
-
-  if (navigator.vibrate) {
-    navigator.vibrate(100);
-  }
+  if (lastIBAN) navigator.clipboard.writeText(lastIBAN);
 }
 
 function parseHUB3(text) {
-  const lines = text.replace(/\r/g, '').split('\n');
+  const lines = text.replace(/\r/g,'').split('\n');
 
+  let iban = null;
   let model = null;
   let poziv = null;
 
-  for (let line of lines) {
-    const l = line.trim();
+  for (let l of lines) {
 
-    let m = l.match(/^(HR)?(\d{2})$/);
-    if (!model && m) {
-      model = "HR" + m[2];
-      continue;
-    }
+    const ib = l.match(/HR\d{2}[A-Z0-9]{17,}/);
+    if (!iban && ib) iban = ib[0];
 
-    let p = l.match(/^\d+(-\d+)+$/);
-    if (!poziv && p) {
-      poziv = l;
-    }
+    const m = l.match(/^(HR)?(\d{2})$/);
+    if (!model && m) model = "HR" + m[2];
+
+    const p = l.match(/^\d+(-\d+)+$/);
+    if (!poziv && p) poziv = p[0];
   }
 
   if (!model || !poziv) {
     return "Greška: ne mogu očitati podatke.";
   }
 
-  return model + " " + poziv;
+  lastIBAN = iban || "";
+  lastRef = model + " " + poziv;
+
+  let out = "";
+
+  if (iban) {
+    const valid = validateIBAN(iban);
+    out += "IBAN: " + iban + (valid ? " ✔" : " ✖") + "\n\n";
+  }
+
+  out += "Model + poziv: " + lastRef + "\n\n";
+  out += sepaFormat();
+
+  return out;
 }
 
-function copyResult() {
-  navigator.clipboard.writeText(output.textContent.replace("✔ ", ""));
+function sepaFormat() {
+  return `SEPA FORMAT
+IBAN: ${lastIBAN}
+REFERENCE: ${lastRef}`;
 }
 
-function openRevolut() {
-  window.location.href = "revolut://";
+// IBAN VALIDACIJA (MOD 97)
+function validateIBAN(iban) {
+  const moved = iban.slice(4) + iban.slice(0,4);
+
+  let expanded = "";
+  for (let c of moved) {
+    if (/[A-Z]/.test(c)) expanded += (c.charCodeAt(0)-55);
+    else expanded += c;
+  }
+
+  return BigInt(expanded) % 97n === 1n;
 }
 
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('service-worker.js');
+// COPY FUNKCIJE
+function copyIBAN() {
+  if (lastIBAN) navigator.clipboard.writeText(lastIBAN);
+}
+
+function copyRef() {
+  if (lastRef) navigator.clipboard.writeText(lastRef);
 }

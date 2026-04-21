@@ -1,6 +1,6 @@
 {
-  "name": "Scan račun",
-  "short_name": "Scan",
+  "name": "SEPA Scanner",
+  "short_name": "SEPA Scan",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#ffffff",
