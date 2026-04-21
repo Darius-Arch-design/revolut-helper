@@ -38,9 +38,11 @@ const els = {
 };
 
 const HUB3_HEADER_RE = /^HRVHUB3\d$/i;
+const EPC_MAX_BYTES = 331;
 
 const state = {
   rawText: "",
+  rawTextOriginal: "",
   lastScanHash: "",
   scanning: false,
   locked: false,
@@ -84,20 +86,28 @@ function emptyPayment() {
     header: "",
     currency: "EUR",
     amount: "",
+
     payerName: "",
     payerAddress1: "",
     payerAddress2: "",
+
     recipientName: "",
     recipientAddress1: "",
     recipientAddress2: "",
+
     accountRaw: "",
     iban: "",
+
     model: "",
     referenceNumber: "",
     combinedReference: "",
+
     purposeCode: "",
     description: "",
-    sepaText: ""
+
+    sepaText: "",
+    sepaEncodingUsed: "1",
+    sepaCharsetLabel: "UTF-8"
   };
 }
 
@@ -108,6 +118,8 @@ function emptyValidation() {
     validForEpc: false
   };
 }
+
+/* ---------------- FLOW ---------------- */
 
 async function onFileSelected(e) {
   const file = e.target.files && e.target.files[0];
@@ -201,6 +213,7 @@ function stopCamera() {
 }
 
 function processDecodedText(text, source) {
+  state.rawTextOriginal = normalizeLineEndings(text);
   const normalizedText = normalizeRawText(text);
   const scanHash = normalizedText.replace(/\s+/g, " ").trim();
 
@@ -216,7 +229,10 @@ function processDecodedText(text, source) {
   state.validation = validation;
 
   if (validation.validForEpc) {
-    state.payment.sepaText = generateEpcPayload(parsed);
+    const epc = generateEpcPayload(parsed);
+    state.payment.sepaText = epc.payload;
+    state.payment.sepaEncodingUsed = epc.encoding;
+    state.payment.sepaCharsetLabel = epc.charsetLabel;
     window.sepaText = state.payment.sepaText;
     renderQr(state.payment.sepaText);
     setStatus("Skeniranje uspješno (" + source + "). EPC QR generiran.", "ok");
@@ -231,6 +247,8 @@ function processDecodedText(text, source) {
   updateButtons();
 }
 
+/* ---------------- PARSING ---------------- */
+
 function parseCode(text) {
   const strict = parseHub3Strict(text);
   if (strict) return strict;
@@ -243,6 +261,7 @@ function parseHub3Strict(text) {
   if (!HUB3_HEADER_RE.test(fields[0])) return null;
 
   const payment = emptyPayment();
+
   payment.parser = "HUB3";
   payment.format = "HUB3";
   payment.header = fields[0];
@@ -250,15 +269,15 @@ function parseHub3Strict(text) {
   payment.currency = normalizeCurrency(fields[1]);
   payment.amount = parseHubAmount(fields[2]);
 
-  payment.payerName = cleanField(fields[3], 70);
-  payment.payerAddress1 = cleanField(fields[4], 70);
-  payment.payerAddress2 = cleanField(fields[5], 70);
+  payment.payerName = cleanDisplayField(fields[3], 70);
+  payment.payerAddress1 = cleanDisplayField(fields[4], 70);
+  payment.payerAddress2 = cleanDisplayField(fields[5], 70);
 
-  payment.recipientName = cleanField(fields[6], 70);
-  payment.recipientAddress1 = cleanField(fields[7], 70);
-  payment.recipientAddress2 = cleanField(fields[8], 70);
+  payment.recipientName = cleanDisplayField(fields[6], 70);
+  payment.recipientAddress1 = cleanDisplayField(fields[7], 70);
+  payment.recipientAddress2 = cleanDisplayField(fields[8], 70);
 
-  payment.accountRaw = cleanField(fields[9], 50);
+  payment.accountRaw = cleanDisplayField(fields[9], 50);
   payment.iban = extractValidIbanFromField(payment.accountRaw);
 
   payment.model = normalizeModel(fields[10]);
@@ -266,7 +285,7 @@ function parseHub3Strict(text) {
   payment.combinedReference = buildCombinedReference(payment.model, payment.referenceNumber);
 
   payment.purposeCode = normalizePurposeCode(fields[12]);
-  payment.description = cleanField(fields[13], 140);
+  payment.description = cleanDisplayField(fields[13], 140);
 
   return payment;
 }
@@ -325,13 +344,83 @@ function parseFallback(text) {
   return payment;
 }
 
-function cleanField(value, maxLen) {
+/* ---------------- NORMALIZATION ---------------- */
+
+function normalizeLineEndings(text) {
+  return (text || "")
+    .replace(/\u0000/g, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .trim();
+}
+
+function normalizeRawText(text) {
+  let v = normalizeLineEndings(text);
+  v = repairMojibakeCroatian(v);
+  v = normalizeUnicodeDisplay(v);
+  return v;
+}
+
+function normalizeUnicodeDisplay(value) {
+  return (value || "")
+    .normalize("NFC")
+    .replace(/[‐‑‒–—]/g, "-")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/\u00A0/g, " ");
+}
+
+function repairMojibakeCroatian(value) {
+  let v = value || "";
+
+  const replacements = [
+    ["Ä", "č"],
+    ["Ä", "Č"],
+    ["Ä", "ć"],
+    ["Ä", "Ć"],
+    ["Å¡", "š"],
+    ["Å ", "Š"],
+    ["Å¾", "ž"],
+    ["Å½", "Ž"],
+    ["Ä", "đ"],
+    ["Ä", "Đ"],
+    ["Ä‘", "đ"],
+    ["Ä’", "Đ"],
+    ["Ã„Â", "č"],
+    ["Ã„Â", "Č"],
+    ["Ã„Â", "ć"],
+    ["Ã„Â", "Ć"],
+    ["Ã…Â¡", "š"],
+    ["Ã…Â ", "Š"],
+    ["Ã…Â¾", "ž"],
+    ["Ã…Â½", "Ž"],
+    ["Ã„Â‘", "đ"],
+    ["Ã„Â", "Đ"],
+    ["Ð", "Đ"],
+    ["ð", "đ"],
+    ["Æ", "Ć"],
+    ["æ", "ć"],
+    ["È", "Č"],
+    ["è", "č"]
+  ];
+
+  for (let i = 0; i < replacements.length; i++) {
+    v = v.split(replacements[i][0]).join(replacements[i][1]);
+  }
+
+  return v;
+}
+
+function cleanDisplayField(value, maxLen) {
   const len = typeof maxLen === "number" ? maxLen : 140;
-  return (value || "").replace(/\s+/g, " ").trim().substring(0, len);
+  return normalizeUnicodeDisplay(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .substring(0, len);
 }
 
 function normalizeCurrency(value) {
-  const v = cleanField(value, 3).toUpperCase();
+  const v = cleanDisplayField(value, 3).toUpperCase();
   return v || "EUR";
 }
 
@@ -346,7 +435,7 @@ function parseHubAmount(value) {
 }
 
 function normalizeModel(value) {
-  const raw = cleanField(value, 10).replace(/\s+/g, "").toUpperCase();
+  const raw = cleanDisplayField(value, 10).replace(/\s+/g, "").toUpperCase();
   if (!raw) return "";
   if (/^HR\d{2}$/.test(raw)) return raw;
   if (/^\d{2}$/.test(raw)) return "HR" + raw;
@@ -354,11 +443,11 @@ function normalizeModel(value) {
 }
 
 function normalizeReference(value) {
-  return cleanField(value, 60).replace(/\s+/g, "");
+  return cleanDisplayField(value, 60).replace(/\s+/g, "");
 }
 
 function normalizePurposeCode(value) {
-  const v = cleanField(value, 10).replace(/\s+/g, "").toUpperCase();
+  const v = cleanDisplayField(value, 10).replace(/\s+/g, "").toUpperCase();
   return /^[A-Z0-9]{4}$/.test(v) ? v : "";
 }
 
@@ -366,6 +455,8 @@ function buildCombinedReference(model, referenceNumber) {
   if (model && referenceNumber) return model + " " + referenceNumber;
   return referenceNumber || model || "";
 }
+
+/* ---------------- VALIDATION ---------------- */
 
 function validatePayment(payment) {
   const errors = [];
@@ -443,9 +534,10 @@ function findValidIbanAnywhere(lines) {
   return "";
 }
 
+/* ---------------- EPC ---------------- */
+
 function generateEpcPayload(payment) {
   const iban = payment.iban.replace(/\s+/g, "").toUpperCase();
-  const name = sanitizeEpcText(payment.recipientName, 70);
   const amount = payment.amount ? "EUR" + Number(payment.amount).toFixed(2) : "";
   const purpose = payment.purposeCode || "";
 
@@ -453,30 +545,91 @@ function generateEpcPayload(payment) {
     ? payment.referenceNumber.replace(/\s+/g, "").toUpperCase()
     : "";
 
-  let unstructuredText = "";
-  if (structuredReference) {
-    unstructuredText = buildUnstructuredText(payment.description, payment.purposeCode);
-  } else {
-    unstructuredText = buildUnstructuredText(
-      [payment.combinedReference, payment.purposeCode, payment.description].filter(Boolean).join(" "),
-      ""
-    );
-  }
+  const nameUtf8 = toEpcField(payment.recipientName, 70, { mode: "name", transliterate: false });
+  const descUtf8 = structuredReference
+    ? toEpcField(buildUnstructuredText(payment.description, payment.purposeCode), 140, { mode: "text", transliterate: false })
+    : toEpcField(
+        [payment.combinedReference, payment.purposeCode, payment.description].filter(Boolean).join(" "),
+        140,
+        { mode: "text", transliterate: false }
+      );
 
-  return [
+  let payload = [
     "BCD",
     "002",
     "1",
     "SCT",
     "",
-    name,
+    nameUtf8,
     iban,
     amount,
     purpose,
     structuredReference,
-    sanitizeEpcText(unstructuredText, 140),
+    descUtf8,
     ""
   ].join("\n");
+
+  if (utf8ByteLength(payload) <= EPC_MAX_BYTES) {
+    return {
+      payload: payload,
+      encoding: "1",
+      charsetLabel: "UTF-8"
+    };
+  }
+
+  const nameAscii = toEpcField(payment.recipientName, 70, { mode: "name", transliterate: true });
+  const descAscii = structuredReference
+    ? toEpcField(buildUnstructuredText(payment.description, payment.purposeCode), 140, { mode: "text", transliterate: true })
+    : toEpcField(
+        [payment.combinedReference, payment.purposeCode, payment.description].filter(Boolean).join(" "),
+        140,
+        { mode: "text", transliterate: true }
+      );
+
+  payload = [
+    "BCD",
+    "002",
+    "1",
+    "SCT",
+    "",
+    nameAscii,
+    iban,
+    amount,
+    purpose,
+    structuredReference,
+    descAscii,
+    ""
+  ].join("\n");
+
+  if (utf8ByteLength(payload) <= EPC_MAX_BYTES) {
+    return {
+      payload: payload,
+      encoding: "1",
+      charsetLabel: "UTF-8 / transliterirano"
+    };
+  }
+
+  const shortenedDesc = trimUtf8Bytes(descAscii, 70);
+  payload = [
+    "BCD",
+    "002",
+    "1",
+    "SCT",
+    "",
+    nameAscii,
+    iban,
+    amount,
+    purpose,
+    structuredReference,
+    shortenedDesc,
+    ""
+  ].join("\n");
+
+  return {
+    payload: payload,
+    encoding: "1",
+    charsetLabel: "UTF-8 / skraćeno"
+  };
 }
 
 function isIso11649Reference(value) {
@@ -488,13 +641,63 @@ function buildUnstructuredText(primary, secondary) {
   return [primary, secondary].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
 }
 
+function toEpcField(value, maxLen, options) {
+  const opts = options || {};
+  let v = cleanDisplayField(value || "", maxLen);
+
+  if (opts.transliterate) {
+    v = transliterateCroatianToLatin(v);
+  }
+
+  v = sanitizeEpcText(v, maxLen);
+
+  if (opts.mode === "name") {
+    v = v.substring(0, 70);
+  }
+  if (opts.mode === "text") {
+    v = v.substring(0, 140);
+  }
+
+  return v;
+}
+
 function sanitizeEpcText(value, maxLen) {
-  return (value || "")
+  return normalizeUnicodeDisplay(value || "")
     .replace(/[\u0000-\u001F]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .substring(0, maxLen);
 }
+
+function transliterateCroatianToLatin(value) {
+  return (value || "")
+    .replace(/Đ/g, "Dj")
+    .replace(/đ/g, "dj")
+    .replace(/Č/g, "C")
+    .replace(/č/g, "c")
+    .replace(/Ć/g, "C")
+    .replace(/ć/g, "c")
+    .replace(/Š/g, "S")
+    .replace(/š/g, "s")
+    .replace(/Ž/g, "Z")
+    .replace(/ž/g, "z");
+}
+
+function utf8ByteLength(str) {
+  return new TextEncoder().encode(str).length;
+}
+
+function trimUtf8Bytes(str, maxBytes) {
+  let out = "";
+  for (const ch of str) {
+    const next = out + ch;
+    if (utf8ByteLength(next) > maxBytes) break;
+    out = next;
+  }
+  return out;
+}
+
+/* ---------------- FALLBACK HELPERS ---------------- */
 
 function findCurrency(lines) {
   for (let i = 0; i < lines.length; i++) {
@@ -577,7 +780,7 @@ function findPurposeCode(lines) {
 
 function findLikelyPayer(lines) {
   for (let i = 0; i < lines.length; i++) {
-    const clean = cleanField(lines[i], 80);
+    const clean = cleanDisplayField(lines[i], 80);
     const compact = clean.replace(/\s+/g, "").toUpperCase();
 
     if (!clean) continue;
@@ -605,7 +808,7 @@ function findLikelyRecipient(lines, iban) {
   });
 
   for (let i = 0; i < lines.length; i++) {
-    const clean = cleanField(lines[i], 80);
+    const clean = cleanDisplayField(lines[i], 80);
     const compact = clean.replace(/\s+/g, "").toUpperCase();
 
     if (!clean) continue;
@@ -629,7 +832,7 @@ function findLikelyRecipient(lines, iban) {
   }
 
   for (let i = 0; i < lines.length; i++) {
-    const clean = cleanField(lines[i], 80);
+    const clean = cleanDisplayField(lines[i], 80);
     const compact = clean.replace(/\s+/g, "").toUpperCase();
 
     if (!clean) continue;
@@ -661,7 +864,7 @@ function findLikelyDescription(lines, payment) {
   });
 
   for (let i = 0; i < lines.length; i++) {
-    const clean = cleanField(lines[i], 140);
+    const clean = cleanDisplayField(lines[i], 140);
     const compact = clean.replace(/\s+/g, "");
 
     if (!clean) continue;
@@ -674,6 +877,8 @@ function findLikelyDescription(lines, payment) {
 
   return "";
 }
+
+/* ---------------- RENDER ---------------- */
 
 function renderParsedData() {
   const p = state.payment;
@@ -698,11 +903,14 @@ function renderParsedData() {
   setText(els.headerField, p.header || "—");
 
   if (v.validForEpc) {
-    if (v.warnings.length) {
-      setText(els.validationField, "Osnovna validacija prošla uz upozorenja: " + v.warnings.join(" "));
-    } else {
-      setText(els.validationField, "Osnovna validacija prošla.");
+    let msg = "Osnovna validacija prošla.";
+    if (p.sepaCharsetLabel) {
+      msg += " EPC encoding: " + p.sepaCharsetLabel + ".";
     }
+    if (v.warnings.length) {
+      msg += " Upozorenja: " + v.warnings.join(" ");
+    }
+    setText(els.validationField, msg);
   } else {
     setText(els.validationField, v.errors.join(" "));
   }
@@ -722,9 +930,15 @@ function renderParsedData() {
 
   if (els.rawBox) {
     if (state.rawText) {
+      let label = '<strong>Raw sadržaj barkoda:</strong>';
+      if (state.rawTextOriginal && state.rawTextOriginal !== state.rawText) {
+        label += ' <span style="color:#475569;">(tekst je automatski normaliziran radi dijakritika)</span>';
+      }
+
       els.rawBox.className = "status";
       els.rawBox.innerHTML =
-        '<strong>Raw sadržaj barkoda:</strong><pre style="margin:8px 0 0; white-space:pre-wrap; word-break:break-word; font-family:Consolas,Monaco,monospace; font-size:12px; line-height:1.5;">' +
+        label +
+        '<pre style="margin:8px 0 0; white-space:pre-wrap; word-break:break-word; font-family:Consolas,Monaco,monospace; font-size:12px; line-height:1.5;">' +
         escapeHtml(state.rawText) +
         "</pre>";
     } else {
@@ -743,13 +957,22 @@ function renderQr(text) {
 
   els.qrContainer.innerHTML = "";
 
-  QRCode.toCanvas(text, { width: 220, margin: 1 }, function (err, canvas) {
-    if (err) {
-      clearQr("Greška pri generiranju QR-a.");
-      return;
+  QRCode.toCanvas(
+    text,
+    {
+      width: 220,
+      margin: 1,
+      errorCorrectionLevel: "M"
+    },
+    function (err, canvas) {
+      if (err) {
+        console.error(err);
+        clearQr("Greška pri generiranju QR-a.");
+        return;
+      }
+      els.qrContainer.appendChild(canvas);
     }
-    els.qrContainer.appendChild(canvas);
-  });
+  );
 }
 
 function clearQr(message) {
@@ -812,6 +1035,7 @@ function resetUiOnly() {
 
 function resetParsedData() {
   state.rawText = "";
+  state.rawTextOriginal = "";
   state.payment = emptyPayment();
   state.validation = emptyValidation();
   window.sepaText = "";
@@ -825,6 +1049,8 @@ function resetAll() {
   if (els.fileInput) els.fileInput.value = "";
   setStatus("Spreman za novo skeniranje.");
 }
+
+/* ---------------- ACTIONS ---------------- */
 
 async function copyIBAN() {
   if (!state.payment.iban) return;
@@ -871,13 +1097,7 @@ function openRevolut() {
   window.location.href = "revolut://";
 }
 
-function normalizeRawText(text) {
-  return (text || "")
-    .replace(/\u0000/g, "")
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .trim();
-}
+/* ---------------- UTILS ---------------- */
 
 function escapeHtml(str) {
   return String(str)
