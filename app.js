@@ -58,12 +58,22 @@ function parseHUB3(text) {
     const p = l.match(/^\d+(-\d+)+$/);
     if (!poziv && p) poziv = p[0];
 
-    // iznos (npr 12.34 ili 12,34)
-    const a = l.match(/^\d+[.,]\d{2}$/);
-    if (!amount && a) {
-      amount = a[0].replace(',', '.');
+       // IZNOS (robustniji parser)
+    const amountRegex = /\b\d{1,3}([.,]\d{3})*([.,]\d{2})\b|\b\d{6,}\b/;
+
+    if (!amount) {
+      const a = l.match(amountRegex);
+      if (a) {
+        let raw = a[0];
+
+        // ako je format 0000001234 → pretvori u decimal
+        if (/^\d{6,}$/.test(raw)) {
+          raw = (parseInt(raw, 10) / 100).toFixed(2);
+        }
+
+        amount = raw.replace(',', '.');
+      }
     }
-  }
 
   if (!model || !poziv) {
     return "Greška: ne mogu očitati model ili poziv na broj.";
