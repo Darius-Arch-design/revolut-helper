@@ -129,12 +129,10 @@ function generateEPC() {
 001
 1
 SCT
-
-PRIMATELJ
 ${iban}
-EUR${amount}
-
-${reference}`;
+PRIMATELJ
+${reference}
+EUR${amount}`;
 }
 
 /* ---------------- IBAN VALIDATION ---------------- */
