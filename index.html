@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SEPA Scan</title>
+
+  <title>SEPA Scan for Revolut</title>
 
   " />
   <meta name="theme-color" content="#0f766e" />
@@ -83,14 +84,15 @@
 
     .hero h1 {
       margin: 0 0 8px;
-      font-size: 28px;
+      font-size: 30px;
+      line-height: 1.15;
     }
 
     .hero p {
       margin: 0;
       color: var(--muted);
       line-height: 1.6;
-      max-width: 70ch;
+      max-width: 72ch;
     }
 
     .grid {
@@ -110,11 +112,6 @@
     .card h2 {
       margin: 0 0 12px;
       font-size: 20px;
-    }
-
-    .card h3 {
-      margin: 0 0 10px;
-      font-size: 16px;
     }
 
     .actions {
@@ -295,15 +292,6 @@
       color: var(--muted);
     }
 
-    pre.raw-pre {
-      margin: 8px 0 0;
-      white-space: pre-wrap;
-      word-break: break-word;
-      font-family: Consolas, Monaco, monospace;
-      font-size: 12px;
-      line-height: 1.5;
-    }
-
     @media (min-width: 860px) {
       .grid {
         grid-template-columns: 1.05fr 0.95fr;
@@ -320,10 +308,10 @@
 
   <main id="main-content" class="app">
     <section class="hero">
-      <h1>SEPA Scan</h1>
+      <h1>SEPA Scan for Revolut</h1>
       <p>
-        Skeniraj 2D barkod s hrvatske uplatnice, provjeri kako su mapirana HUB3 polja
-        i generiraj EPC QR ili tekst za lakši unos u bankarsku aplikaciju.
+        Skeniraj hrvatsku HUB3 uplatnicu, provjeri očitane podatke i pripremi plaćanje
+        za brži unos u Revolutu.
       </p>
     </section>
 
@@ -344,13 +332,7 @@
           <video id="video" autoplay muted playsinline></video>
         </div>
 
-        <div
-          id="statusBox"
-          class="status"
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-        >
+        <div id="statusBox" class="status" role="status" aria-live="polite" aria-atomic="true">
           Čekam skeniranje...
         </div>
 
@@ -441,14 +423,7 @@
         </div>
       </div>
 
-      <div
-        id="warningsBox"
-        class="status hidden"
-        role="alert"
-        aria-live="assertive"
-        aria-atomic="true"
-      ></div>
-
+      <div id="warningsBox" class="status hidden" role="alert" aria-live="assertive" aria-atomic="true"></div>
       <div id="rawBox" class="status hidden"></div>
     </section>
 
@@ -456,7 +431,7 @@
       <h2 id="hub3-title">HUB3 detalji</h2>
 
       <p class="note">
-        Ovaj blok je koristan za provjeru je li barkod parsiran strogo po HUB3 redoslijedu
+        Ovaj blok pomaže provjeriti je li barkod parsiran strogo po HUB3 redoslijedu
         ili je aplikacija morala koristiti fallback logiku.
       </p>
 
