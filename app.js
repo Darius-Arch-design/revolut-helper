@@ -132,6 +132,7 @@ function generateEPC() {
     "1",
     "SCT",
     "",
+    "",
     name,
     iban,
     "EUR",
