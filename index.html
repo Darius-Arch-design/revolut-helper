@@ -60,25 +60,69 @@ button {
 <button onclick="copyRef()">Kopiraj model + poziv</button>
 <button onclick="openRevolut()">Otvori Revolut</button>
 
-<div style="text-align:left; margin-top:20px; background:#ffffff; padding:15px; border-radius:12px; font-size:14px; line-height:1.6; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+<div style="
+  margin-top:25px;
+  padding:18px;
+  border-radius:16px;
+  background: linear-gradient(135deg, #f8f9ff, #eef1ff);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+  font-size:14px;
+  line-height:1.6;
+">
 
-  <h3 style="margin-top:0;">Upute za plaćanje računa putem Revoluta</h3>
+  <h3 style="
+    margin-top:0;
+    margin-bottom:15px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  ">
+    💳 Upute za plaćanje putem Revoluta
+  </h3>
 
-  <p><b>1. Pokretanje novog plaćanja</b><br>
-  Klikni na Plaćanja u donjem izborniku, zatim na + za otvaranje novog plaćanja.</p>
+  <div style="display:flex; flex-direction:column; gap:12px;">
 
-  <p><b>2. Odabir vrste plaćanja</b><br>
-  Odaberi Banka, a zatim Poslovni.</p>
+    <div style="display:flex; gap:10px;">
+      <div style="font-size:18px;">➕</div>
+      <div>
+        <b>Pokretanje novog plaćanja</b><br>
+        Klikni na Plaćanja u donjem izborniku, zatim na + za otvaranje novog plaćanja.
+      </div>
+    </div>
 
-  <p><b>3. Unos podataka primatelja</b><br>
-  Zalijepi IBAN i naziv tvrtke (odnosno naziv primatelja), a potom klikni na Dodajte primatelja. Upozorenje o nepoznatom primatelju slobodno zanemari.</p>
+    <div style="display:flex; gap:10px;">
+      <div style="font-size:18px;">🏦</div>
+      <div>
+        <b>Odabir vrste plaćanja</b><br>
+        Odaberi Banka, a zatim Poslovni.
+      </div>
+    </div>
 
-  <p><b>4. Unos iznosa i reference</b><br>
-  U novom prozoru upiši željeni iznos. U polju Reference obriši tekst „Poslano preko Revoluta” i zalijepi model i poziv na broj (npr. HR05 111197-87170-1025).</p>
+    <div style="display:flex; gap:10px;">
+      <div style="font-size:18px;">📋</div>
+      <div>
+        <b>Unos podataka primatelja</b><br>
+        Zalijepi IBAN i naziv tvrtke, zatim klikni Dodajte primatelja (upozorenje slobodno zanemari).
+      </div>
+    </div>
 
-  <p><b>5. Potvrda plaćanja</b><br>
-  Provjeri sve unesene podatke i potvrdi plaćanje.</p>
+    <div style="display:flex; gap:10px;">
+      <div style="font-size:18px;">💶</div>
+      <div>
+        <b>Unos iznosa i reference</b><br>
+        Upiši iznos. U polju Reference izbriši “Poslano preko Revoluta” i zalijepi model i poziv na broj (npr. HR05 111197-87170-1025).
+      </div>
+    </div>
 
+    <div style="display:flex; gap:10px;">
+      <div style="font-size:18px;">✅</div>
+      <div>
+        <b>Potvrda plaćanja</b><br>
+        Provjeri sve unesene podatke i potvrdi plaćanje.
+      </div>
+    </div>
+
+  </div>
 </div>
 
 <script src="app.js"></script>
