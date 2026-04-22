@@ -364,13 +364,13 @@
         <div class="actions">
           <button id="copyIbanBtn" type="button" disabled>Kopiraj IBAN</button>
           <button id="copyRefBtn" type="button" disabled>Kopiraj model + poziv</button>
-          <button id="copySepaBtn" type="button" disabled>Kopiraj SEPA podatke</button>
+          <button id="copySepaBtn" type="button" disabled hidden>Kopiraj SEPA podatke</button>
           <button id="shareQrBtn" type="button" disabled>Spremi u Galeriju / Podijeli QR</button>
           <button id="saveQrBtn" type="button" disabled>Download PNG</button>
           <button id="openRevolutBtn" class="primary" type="button">Otvori Revolut</button>
         </div>
 
-        <p class="note">
+        <p class="note" hidden>
           Na iPhoneu prvo probaj “Spremi u Galeriju / Podijeli QR”. Ako to ne uspije,
           ostaje fallback “Download PNG”.
         </p>
@@ -381,7 +381,7 @@
       <h2 id="ocitani-title">Očitani podaci</h2>
 
       <div class="result-grid">
-        <div class="field">
+        <div class="field" hidden>
           <span class="field-label">Parser</span>
           <div id="parserField" class="field-value mono">—</div>
         </div>
@@ -411,7 +411,7 @@
           <div id="ibanField" class="field-value mono">—</div>
         </div>
 
-        <div class="field">
+        <div class="field" hidden>
           <span class="field-label">Raw račun / IBAN polje</span>
           <div id="accountRawField" class="field-value mono">—</div>
         </div>
@@ -431,7 +431,7 @@
           <div id="descField" class="field-value">—</div>
         </div>
 
-        <div class="field">
+        <div class="field" hidden>
           <span class="field-label">Status validacije</span>
           <div id="validationField" class="field-value">—</div>
         </div>
@@ -441,7 +441,7 @@
       <div id="rawBox" class="status hidden"></div>
     </section>
 
-    <section class="card section-spacer" aria-labelledby="hub3-title">
+    <section class="card section-spacer" aria-labelledby="hub3-title" hidden>
       <h2 id="hub3-title">HUB3 detalji</h2>
 
       <p class="note">
