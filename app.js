@@ -34,6 +34,7 @@ const els = {
   copyIbanBtn: document.getElementById("copyIbanBtn"),
   copyRefBtn: document.getElementById("copyRefBtn"),
   copySepaBtn: document.getElementById("copySepaBtn"),
+  saveQrBtn: document.getElementById("saveQrBtn"),
   openRevolutBtn: document.getElementById("openRevolutBtn")
 };
 
@@ -68,6 +69,7 @@ function bindEvents() {
   if (els.copyIbanBtn) els.copyIbanBtn.addEventListener("click", copyIBAN);
   if (els.copyRefBtn) els.copyRefBtn.addEventListener("click", copyRef);
   if (els.copySepaBtn) els.copySepaBtn.addEventListener("click", copySepa);
+  if (els.saveQrBtn) els.saveQrBtn.addEventListener("click", saveQrImage);
   if (els.openRevolutBtn) els.openRevolutBtn.addEventListener("click", openRevolut);
 }
 
@@ -157,7 +159,11 @@ async function startCamera() {
     if (els.stopCameraBtn) els.stopCameraBtn.disabled = false;
 
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" } },
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      },
       audio: false
     });
 
@@ -651,12 +657,8 @@ function toEpcField(value, maxLen, options) {
 
   v = sanitizeEpcText(v, maxLen);
 
-  if (opts.mode === "name") {
-    v = v.substring(0, 70);
-  }
-  if (opts.mode === "text") {
-    v = v.substring(0, 140);
-  }
+  if (opts.mode === "name") v = v.substring(0, 70);
+  if (opts.mode === "text") v = v.substring(0, 140);
 
   return v;
 }
@@ -930,7 +932,7 @@ function renderParsedData() {
 
   if (els.rawBox) {
     if (state.rawText) {
-      let label = '<strong>Raw sadržaj barkoda:</strong>';
+      let label = "<strong>Raw sadržaj barkoda:</strong>";
       if (state.rawTextOriginal && state.rawTextOriginal !== state.rawText) {
         label += ' <span style="color:#475569;">(tekst je automatski normaliziran radi dijakritika)</span>';
       }
@@ -960,7 +962,7 @@ function renderQr(text) {
   QRCode.toCanvas(
     text,
     {
-      width: 220,
+      width: 512,
       margin: 1,
       errorCorrectionLevel: "M"
     },
@@ -991,10 +993,12 @@ function updateButtons() {
   const hasIban = !!state.payment.iban;
   const hasRef = !!state.payment.combinedReference;
   const hasSepa = !!state.payment.sepaText;
+  const hasCanvas = !!(els.qrContainer && els.qrContainer.querySelector("canvas"));
 
   if (els.copyIbanBtn) els.copyIbanBtn.disabled = !hasIban;
   if (els.copyRefBtn) els.copyRefBtn.disabled = !hasRef;
   if (els.copySepaBtn) els.copySepaBtn.disabled = !hasSepa;
+  if (els.saveQrBtn) els.saveQrBtn.disabled = !(hasSepa && hasCanvas);
 }
 
 function resetUiOnly() {
@@ -1091,6 +1095,58 @@ function fallbackCopy(text) {
   ta.select();
   document.execCommand("copy");
   document.body.removeChild(ta);
+}
+
+function saveQrImage() {
+  try {
+    const canvas = els.qrContainer ? els.qrContainer.querySelector("canvas") : null;
+
+    if (!canvas) {
+      setStatus("QR slika nije dostupna za download.", "err");
+      return;
+    }
+
+    const filename = buildQrFilename();
+
+    if (canvas.toBlob) {
+      canvas.toBlob(function (blob) {
+        if (!blob) {
+          setStatus("Ne mogu pripremiti QR sliku za download.", "err");
+          return;
+        }
+
+        const url = URL.createObjectURL(blob);
+        triggerDownload(url, filename);
+        setTimeout(function () {
+          URL.revokeObjectURL(url);
+        }, 1000);
+        setStatus("QR slika preuzeta.", "ok");
+      }, "image/png");
+      return;
+    }
+
+    const dataUrl = canvas.toDataURL("image/png");
+    triggerDownload(dataUrl, filename);
+    setStatus("QR slika preuzeta.", "ok");
+  } catch (err) {
+    console.error(err);
+    setStatus("Download QR slike nije uspio.", "err");
+  }
+}
+
+function triggerDownload(url, filename) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+function buildQrFilename() {
+  const iban = (state.payment.iban || "qr").replace(/[^A-Z0-9]/gi, "");
+  const amount = state.payment.amount ? String(state.payment.amount).replace(".", "-") : "bez-iznosa";
+  return "sepa-qr-" + iban.slice(0, 12) + "-" + amount + ".png";
 }
 
 function openRevolut() {
