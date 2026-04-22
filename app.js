@@ -9,23 +9,34 @@ if (window.pdfjsLib) {
     "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 }
 
-let codeReader = null;
+let codeReader = createCodeReader(DEFAULT_CAMERA_CHARSET);
 
 const els = {
   fileInput: document.getElementById("fileInput"),
   video: document.getElementById("video"),
   qrContainer: document.getElementById("qrContainer"),
   statusBox: document.getElementById("statusBox"),
+  warningsBox: document.getElementById("warningsBox"),
+  rawBox: document.getElementById("rawBox"),
 
+  parserField: document.getElementById("parserField"),
   currencyField: document.getElementById("currencyField"),
   purposeField: document.getElementById("purposeField"),
 
   payerField: document.getElementById("payerField"),
   recipientField: document.getElementById("recipientField"),
   ibanField: document.getElementById("ibanField"),
+  accountRawField: document.getElementById("accountRawField"),
   refField: document.getElementById("refField"),
   amountField: document.getElementById("amountField"),
   descField: document.getElementById("descField"),
+  validationField: document.getElementById("validationField"),
+
+  payerAddress1Field: document.getElementById("payerAddress1Field"),
+  payerAddress2Field: document.getElementById("payerAddress2Field"),
+  recipientAddress1Field: document.getElementById("recipientAddress1Field"),
+  recipientAddress2Field: document.getElementById("recipientAddress2Field"),
+  headerField: document.getElementById("headerField"),
 
   startCameraBtn: document.getElementById("startCameraBtn"),
   stopCameraBtn: document.getElementById("stopCameraBtn"),
@@ -33,6 +44,7 @@ const els = {
 
   copyIbanBtn: document.getElementById("copyIbanBtn"),
   copyRefBtn: document.getElementById("copyRefBtn"),
+  copySepaBtn: document.getElementById("copySepaBtn"),
   shareQrBtn: document.getElementById("shareQrBtn"),
   saveQrBtn: document.getElementById("saveQrBtn"),
   openRevolutBtn: document.getElementById("openRevolutBtn")
@@ -55,20 +67,6 @@ function init() {
   bindEvents();
   resetParsedData();
   exposeLegacyFunctions();
-
-  if (!window.ZXing || !ZXing.BrowserMultiFormatReader) {
-    setStatus("ZXing nije učitan. Provjeri script tag u index.html.", "err");
-    return;
-  }
-
-  codeReader = createCodeReader(DEFAULT_CAMERA_CHARSET);
-
-  if (!window.QRCode) {
-    console.warn("QRCode biblioteka nije učitana. Skeniranje će raditi, ali EPC QR neće.");
-    setStatus("Aplikacija spremna. QR generator nije učitan, ali skeniranje radi.", "warn");
-  } else {
-    setStatus("Aplikacija spremna. Možeš skenirati barkod.", "ok");
-  }
 }
 
 function createCodeReader(charset) {
@@ -77,7 +75,6 @@ function createCodeReader(charset) {
     ZXing.BarcodeFormat.QR_CODE,
     ZXing.BarcodeFormat.PDF_417
   ]);
-  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
 
   if (charset) {
     hints.set(ZXing.DecodeHintType.CHARACTER_SET, charset);
@@ -94,6 +91,7 @@ function bindEvents() {
 
   if (els.copyIbanBtn) els.copyIbanBtn.addEventListener("click", copyIBAN);
   if (els.copyRefBtn) els.copyRefBtn.addEventListener("click", copyRef);
+  if (els.copySepaBtn) els.copySepaBtn.addEventListener("click", copySepa);
   if (els.shareQrBtn) els.shareQrBtn.addEventListener("click", shareQrImage);
   if (els.saveQrBtn) els.saveQrBtn.addEventListener("click", saveQrImage);
   if (els.openRevolutBtn) els.openRevolutBtn.addEventListener("click", openRevolut);
@@ -114,19 +112,25 @@ function emptyPayment() {
     header: "",
     currency: "EUR",
     amount: "",
+
     payerName: "",
     payerAddress1: "",
     payerAddress2: "",
+
     recipientName: "",
     recipientAddress1: "",
     recipientAddress2: "",
+
     accountRaw: "",
     iban: "",
+
     model: "",
     referenceNumber: "",
     combinedReference: "",
+
     purposeCode: "",
     description: "",
+
     sepaText: "",
     sepaEncodingUsed: "1",
     sepaCharsetLabel: "UTF-8"
@@ -147,7 +151,6 @@ async function onFileSelected(e) {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
 
-  stopCamera();
   resetParsedData();
 
   try {
@@ -161,7 +164,7 @@ async function onFileSelected(e) {
       processDecodedText(decoded.text, "slika");
     }
   } catch (err) {
-    console.error("UPLOAD/DECODE ERROR:", err);
+    console.error(err);
     setStatus("Ne mogu očitati QR/PDF417 iz odabrane datoteke.", "err");
   }
 }
@@ -188,9 +191,7 @@ async function decodePdfFile(file) {
     try {
       const decoded = await decodeImageWithFallback(img);
       return decoded;
-    } catch (err) {
-      console.warn("PDF stranica nije očitana:", pageNumber, err);
-    }
+    } catch (_) {}
   }
 
   throw new Error("Barkod nije pronađen ni na jednoj podržanoj PDF stranici.");
@@ -228,7 +229,6 @@ async function decodeImageWithFallback(img) {
 
     try {
       const result = await reader.decodeFromImageElement(img);
-
       if (result && result.text) {
         const normalized = normalizeRawText(result.text);
         const score = scoreDecodedCandidate(normalized);
@@ -238,8 +238,7 @@ async function decodeImageWithFallback(img) {
           bestScore = score;
         }
       }
-    } catch (err) {
-      console.warn("decodeFromImageElement fail:", charset, err);
+    } catch (_) {
     } finally {
       try { reader.reset(); } catch (_) {}
     }
@@ -260,7 +259,7 @@ async function decodeImageFileRobust(file) {
   let bestScore = -Infinity;
 
   for (let i = 0; i < variants.length; i++) {
-    setStatus("Analiziram sliku... pokušaj " + (i + 1) + " / " + variants.length, "warn");
+    setStatus("Analiziram sliku iz uređaja... pokušaj " + (i + 1) + " / " + variants.length, "warn");
     const decoded = await decodeCanvasWithCharsetFallback(variants[i]);
 
     if (decoded && decoded.text) {
@@ -430,8 +429,7 @@ async function decodeCanvasWithCharsetFallback(canvas) {
           bestScore = score;
         }
       }
-    } catch (err) {
-      console.warn("Canvas decode fail:", charset, err);
+    } catch (_) {
     } finally {
       try { reader.reset(); } catch (_) {}
     }
@@ -557,14 +555,13 @@ function processDecodedText(text, source) {
     state.payment.sepaEncodingUsed = epc.encoding;
     state.payment.sepaCharsetLabel = epc.charsetLabel;
     window.sepaText = state.payment.sepaText;
-
     renderQr(state.payment.sepaText);
-    setStatus("Skeniranje uspješno (" + source + ").", "ok");
+    setStatus("Skeniranje uspješno (" + source + "). EPC QR generiran.", "ok");
   } else {
     state.payment.sepaText = "";
     window.sepaText = "";
     clearQr("Nedostaju obvezni podaci za EPC QR.");
-    setStatus("Skeniranje uspješno (" + source + "), ali podaci nisu potpuno valjani za EPC QR.", "warn");
+    setStatus("Skeniranje uspješno (" + source + "), ali podaci nisu dovoljno valjani za EPC QR.", "warn");
   }
 
   renderParsedData();
@@ -751,12 +748,34 @@ function repairMojibakeCroatian(value) {
   let v = value || "";
 
   const replacements = [
-    ["Ä", "č"], ["Ä", "Č"], ["Äć", "ć"], ["Ä‡", "ć"], ["Ä", "ć"],
-    ["Ä†", "Ć"], ["Ä", "Ć"], ["Å¡", "š"], ["Å ", "Š"], ["ÅŠ", "Š"],
-    ["Å¾", "ž"], ["Å½", "Ž"], ["Ä‘", "đ"], ["Ä", "Đ"], ["Ð", "Đ"], ["ð", "đ"],
-    ["Ã„Â", "č"], ["Ã„Â", "Č"], ["Ã„Â‡", "ć"], ["Ã„Â", "ć"],
-    ["Ã„Â†", "Ć"], ["Ã„Â", "Ć"], ["Ã…Â¡", "š"], ["Ã…Â ", "Š"],
-    ["Ã…Â¾", "ž"], ["Ã…Â½", "Ž"], ["Ã„Â‘", "đ"], ["Ã„Â", "Đ"]
+    ["Ä", "č"],
+    ["Ä", "Č"],
+    ["Äć", "ć"],
+    ["Ä‡", "ć"],
+    ["Ä", "ć"],
+    ["Ä†", "Ć"],
+    ["Ä", "Ć"],
+    ["Å¡", "š"],
+    ["Å ", "Š"],
+    ["ÅŠ", "Š"],
+    ["Å¾", "ž"],
+    ["Å½", "Ž"],
+    ["Ä‘", "đ"],
+    ["Ä", "Đ"],
+    ["Ð", "Đ"],
+    ["ð", "đ"],
+    ["Ã„Â", "č"],
+    ["Ã„Â", "Č"],
+    ["Ã„Â‡", "ć"],
+    ["Ã„Â", "ć"],
+    ["Ã„Â†", "Ć"],
+    ["Ã„Â", "Ć"],
+    ["Ã…Â¡", "š"],
+    ["Ã…Â ", "Š"],
+    ["Ã…Â¾", "ž"],
+    ["Ã…Â½", "Ž"],
+    ["Ã„Â‘", "đ"],
+    ["Ã„Â", "Đ"]
   ];
 
   for (const pair of replacements) {
@@ -810,7 +829,7 @@ function normalizeModel(value) {
 function normalizeReference(value) {
   return cleanDisplayField(value, 80)
     .replace(/\s+/g, "")
-    .replace(/[^A-Za-z0-9\-/.]/g, "");
+    .replace(/[^A-Za-z0-9\-\/.]/g, "");
 }
 
 function normalizePurposeCode(value) {
@@ -822,7 +841,7 @@ function buildCombinedReference(model, referenceNumber) {
   const cleanModel = (model || "").replace(/\s+/g, "").toUpperCase();
   const cleanRef = (referenceNumber || "")
     .replace(/\s+/g, "")
-    .replace(/[^A-Za-z0-9\-/.]/g, "");
+    .replace(/[^A-Za-z0-9\-\/.]/g, "");
 
   if (cleanModel && cleanRef) return cleanModel + " " + cleanRef;
   if (cleanRef) return cleanRef;
@@ -853,9 +872,17 @@ function validatePayment(payment) {
     errors.push("Naziv primatelja nije pronađen.");
   }
 
-  if (!payment.amount) warnings.push("Iznos nije pronađen.");
-  if (!payment.combinedReference) warnings.push("Model i poziv nisu pronađeni.");
-  if (!payment.description) warnings.push("Opis plaćanja nije pronađen.");
+  if (!payment.amount) {
+    warnings.push("Iznos nije pronađen.");
+  }
+
+  if (!payment.combinedReference) {
+    warnings.push("Model i poziv nisu pronađeni.");
+  }
+
+  if (!payment.description) {
+    warnings.push("Opis plaćanja nije pronađen.");
+  }
 
   return {
     errors,
@@ -941,7 +968,11 @@ function generateEpcPayload(payment) {
   ].join("\n");
 
   if (utf8ByteLength(payload) <= EPC_MAX_BYTES) {
-    return { payload, encoding: "1", charsetLabel: "UTF-8" };
+    return {
+      payload,
+      encoding: "1",
+      charsetLabel: "UTF-8"
+    };
   }
 
   const nameAscii = toEpcField(payment.recipientName, 70, {
@@ -973,7 +1004,11 @@ function generateEpcPayload(payment) {
   ].join("\n");
 
   if (utf8ByteLength(payload) <= EPC_MAX_BYTES) {
-    return { payload, encoding: "1", charsetLabel: "UTF-8 / transliterirano" };
+    return {
+      payload,
+      encoding: "1",
+      charsetLabel: "UTF-8 / transliterirano"
+    };
   }
 
   const shortenedRemittance = trimUtf8Bytes(remittanceAscii, 70);
@@ -993,7 +1028,11 @@ function generateEpcPayload(payment) {
     ""
   ].join("\n");
 
-  return { payload, encoding: "1", charsetLabel: "UTF-8 / skraćeno" };
+  return {
+    payload,
+    encoding: "1",
+    charsetLabel: "UTF-8 / skraćeno"
+  };
 }
 
 function isIso11649Reference(value) {
@@ -1105,9 +1144,9 @@ function findReference(lines) {
   for (let i = 0; i < lines.length; i++) {
     const compact = lines[i]
       .replace(/\s+/g, "")
-      .replace(/[^A-Za-z0-9\-/.]/g, "");
+      .replace(/[^A-Za-z0-9\-\/.]/g, "");
 
-    if (/^[A-Z0-9][A-Z0-9\-/.]{4,79}$/i.test(compact)) {
+    if (/^[A-Z0-9][A-Z0-9\-\/.]{4,79}$/i.test(compact)) {
       if (compact.length > best.length) best = compact;
     }
   }
@@ -1199,15 +1238,66 @@ function findLikelyDescription(lines, payment) {
 
 function renderParsedData() {
   const p = state.payment;
+  const v = state.validation;
 
+  setText(els.parserField, p.parser || "—");
   setText(els.currencyField, p.currency || "—");
   setText(els.purposeField, p.purposeCode || "—");
+
   setText(els.payerField, p.payerName || "—");
   setText(els.recipientField, p.recipientName || "—");
   setText(els.ibanField, p.iban || "—");
+  setText(els.accountRawField, p.accountRaw || "—");
   setText(els.refField, p.combinedReference || "—");
   setText(els.amountField, p.amount ? Number(p.amount).toFixed(2) + " EUR" : "—");
   setText(els.descField, p.description || "—");
+
+  setText(els.payerAddress1Field, p.payerAddress1 || "—");
+  setText(els.payerAddress2Field, p.payerAddress2 || "—");
+  setText(els.recipientAddress1Field, p.recipientAddress1 || "—");
+  setText(els.recipientAddress2Field, p.recipientAddress2 || "—");
+  setText(els.headerField, p.header || "—");
+
+  if (v.validForEpc) {
+    let msg = "Osnovna validacija prošla.";
+    if (p.sepaCharsetLabel) msg += " EPC encoding: " + p.sepaCharsetLabel + ".";
+    if (v.warnings.length) msg += " Upozorenja: " + v.warnings.join(" ");
+    setText(els.validationField, msg);
+  } else {
+    setText(els.validationField, v.errors.join(" ") || "—");
+  }
+
+  if (els.warningsBox) {
+    if (v.errors.length) {
+      els.warningsBox.className = "status err";
+      els.warningsBox.textContent = "Greške: " + v.errors.join(" ");
+    } else if (v.warnings.length) {
+      els.warningsBox.className = "status warn";
+      els.warningsBox.textContent = "Upozorenja: " + v.warnings.join(" ");
+    } else {
+      els.warningsBox.className = "status hidden";
+      els.warningsBox.textContent = "";
+    }
+  }
+
+  if (els.rawBox) {
+    if (state.rawText) {
+      let label = "<strong>Raw sadržaj barkoda:</strong>";
+      if (state.rawTextOriginal && state.rawTextOriginal !== state.rawText) {
+        label += ' <span style="color:#475569;">(tekst je automatski normaliziran radi dijakritika)</span>';
+      }
+
+      els.rawBox.className = "status";
+      els.rawBox.innerHTML =
+        label +
+        '<pre style="margin:8px 0 0; white-space:pre-wrap; word-break:break-word; font-family:Consolas,Monaco,monospace; font-size:12px; line-height:1.5;">' +
+        escapeHtml(state.rawText) +
+        "</pre>";
+    } else {
+      els.rawBox.className = "status hidden";
+      els.rawBox.textContent = "";
+    }
+  }
 }
 
 function setText(el, value) {
@@ -1216,11 +1306,6 @@ function setText(el, value) {
 
 function renderQr(text) {
   if (!els.qrContainer) return;
-
-  if (!window.QRCode || typeof QRCode.toCanvas !== "function") {
-    clearQr("QR biblioteka nije učitana. Podaci su očitani, ali QR nije generiran.");
-    return;
-  }
 
   els.qrContainer.innerHTML = "";
 
@@ -1273,23 +1358,42 @@ function updateButtons() {
 
   if (els.copyIbanBtn) els.copyIbanBtn.disabled = !hasIban;
   if (els.copyRefBtn) els.copyRefBtn.disabled = !hasRef;
+  if (els.copySepaBtn) els.copySepaBtn.disabled = !hasSepa;
   if (els.shareQrBtn) els.shareQrBtn.disabled = !(hasSepa && hasCanvas);
   if (els.saveQrBtn) els.saveQrBtn.disabled = !(hasSepa && hasCanvas);
 }
 
 function resetUiOnly() {
   [
+    els.parserField,
     els.currencyField,
     els.purposeField,
     els.payerField,
     els.recipientField,
     els.ibanField,
+    els.accountRawField,
     els.refField,
     els.amountField,
-    els.descField
+    els.descField,
+    els.validationField,
+    els.payerAddress1Field,
+    els.payerAddress2Field,
+    els.recipientAddress1Field,
+    els.recipientAddress2Field,
+    els.headerField
   ].forEach(function (el) {
     setText(el, "—");
   });
+
+  if (els.warningsBox) {
+    els.warningsBox.className = "status hidden";
+    els.warningsBox.textContent = "";
+  }
+
+  if (els.rawBox) {
+    els.rawBox.className = "status hidden";
+    els.rawBox.textContent = "";
+  }
 
   clearQr("QR će se pojaviti nakon uspješnog i valjanog parsiranja.");
   updateButtons();
@@ -1309,7 +1413,7 @@ function resetAll() {
   state.lastScanHash = "";
   resetParsedData();
   if (els.fileInput) els.fileInput.value = "";
-  setStatus("Čekam skeniranje...", "warn");
+  setStatus("Čekam skeniranje...");
 }
 
 /* ---------------- ACTIONS ---------------- */
@@ -1322,6 +1426,11 @@ async function copyIBAN() {
 async function copyRef() {
   if (!state.payment.combinedReference) return;
   await copyText(state.payment.combinedReference, "Model i poziv kopirani.");
+}
+
+async function copySepa() {
+  if (!state.payment.sepaText) return;
+  await copyText(state.payment.sepaText, "SEPA podaci kopirani.");
 }
 
 async function copyText(text, successMessage) {
