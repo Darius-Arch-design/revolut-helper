@@ -543,6 +543,7 @@ function processDecodedText(text, source) {
   state.rawText = normalizedText;
 
   const parsed = parseCode(normalizedText);
+  parsed.combinedReference = buildCombinedReference(parsed.model, parsed.referenceNumber);
   state.payment = parsed;
 
   const validation = validatePayment(parsed);
@@ -808,15 +809,27 @@ function parseHubAmount(value) {
 }
 
 function normalizeModel(value) {
-  const raw = cleanDisplayField(value, 10).replace(/\s+/g, "").toUpperCase();
-  if (!raw) return "";
-  if (/^HR\d{2}$/.test(raw)) return raw;
-  if (/^\d{2}$/.test(raw)) return "HR" + raw;
-  return raw;
+  const raw = cleanDisplayField(value, 20).toUpperCase();
+  const compact = raw.replace(/\s+/g, "");
+
+  if (!compact) return "";
+
+  const exact = compact.match(/^HR(\d{2})$/);
+  if (exact) return "HR" + exact[1];
+
+  const onlyDigits = compact.match(/^(\d{2})$/);
+  if (onlyDigits) return "HR" + onlyDigits[1];
+
+  const embedded = compact.match(/HR(\d{2})/);
+  if (embedded) return "HR" + embedded[1];
+
+  return "";
 }
 
 function normalizeReference(value) {
-  return cleanDisplayField(value, 80).replace(/\s+/g, "");
+  return cleanDisplayField(value, 80)
+    .replace(/\s+/g, "")
+    .replace(/[^A-Za-z0-9\-\/.]/g, "");
 }
 
 function normalizePurposeCode(value) {
@@ -825,8 +838,16 @@ function normalizePurposeCode(value) {
 }
 
 function buildCombinedReference(model, referenceNumber) {
-  if (model && referenceNumber) return model + " " + referenceNumber;
-  return referenceNumber || model || "";
+  const cleanModel = (model || "").replace(/\s+/g, "").toUpperCase();
+  const cleanRef = (referenceNumber || "")
+    .replace(/\s+/g, "")
+    .replace(/[^A-Za-z0-9\-\/.]/g, "");
+
+  if (cleanModel && cleanRef) return cleanModel + " " + cleanRef;
+  if (cleanRef) return cleanRef;
+  if (cleanModel) return cleanModel;
+
+  return "";
 }
 
 /* ---------------- VALIDATION ---------------- */
@@ -912,28 +933,24 @@ function findValidIbanAnywhere(lines) {
 function generateEpcPayload(payment) {
   const iban = (payment.iban || "").replace(/\s+/g, "").toUpperCase();
   const amount = payment.amount ? "EUR" + Number(payment.amount).toFixed(2) : "";
-  const purpose = payment.purposeCode || "";
+  const combinedReference = buildCombinedReference(payment.model, payment.referenceNumber);
+
   const structuredReference = isIso11649Reference(payment.referenceNumber)
     ? payment.referenceNumber.replace(/\s+/g, "").toUpperCase()
     : "";
 
-  const nameUtf8 = toEpcField(payment.recipientName, 70, { mode: "name", transliterate: false });
+  const nameUtf8 = toEpcField(payment.recipientName, 70, {
+    mode: "name",
+    transliterate: false
+  });
 
-  let unstructuredBase = "";
+  let remittanceUtf8 = "";
   if (!structuredReference) {
-    unstructuredBase = [
-      payment.referenceNumber || "",
-      payment.purposeCode || "",
-      payment.description || ""
-    ].filter(Boolean).join(" ");
-  } else {
-    unstructuredBase = [
-      payment.purposeCode || "",
-      payment.description || ""
-    ].filter(Boolean).join(" ");
+    remittanceUtf8 = toEpcField(combinedReference, 140, {
+      mode: "text",
+      transliterate: false
+    });
   }
-
-  const descUtf8 = toEpcField(unstructuredBase, 140, { mode: "text", transliterate: false });
 
   let payload = [
     "BCD",
@@ -944,9 +961,9 @@ function generateEpcPayload(payment) {
     nameUtf8,
     iban,
     amount,
-    purpose,
+    "",
     structuredReference,
-    descUtf8,
+    remittanceUtf8,
     ""
   ].join("\n");
 
@@ -958,8 +975,18 @@ function generateEpcPayload(payment) {
     };
   }
 
-  const nameAscii = toEpcField(payment.recipientName, 70, { mode: "name", transliterate: true });
-  const descAscii = toEpcField(unstructuredBase, 140, { mode: "text", transliterate: true });
+  const nameAscii = toEpcField(payment.recipientName, 70, {
+    mode: "name",
+    transliterate: true
+  });
+
+  let remittanceAscii = "";
+  if (!structuredReference) {
+    remittanceAscii = toEpcField(combinedReference, 140, {
+      mode: "text",
+      transliterate: true
+    });
+  }
 
   payload = [
     "BCD",
@@ -970,9 +997,9 @@ function generateEpcPayload(payment) {
     nameAscii,
     iban,
     amount,
-    purpose,
+    "",
     structuredReference,
-    descAscii,
+    remittanceAscii,
     ""
   ].join("\n");
 
@@ -984,7 +1011,7 @@ function generateEpcPayload(payment) {
     };
   }
 
-  const shortened = trimUtf8Bytes(descAscii, 70);
+  const shortenedRemittance = trimUtf8Bytes(remittanceAscii, 70);
 
   payload = [
     "BCD",
@@ -995,9 +1022,9 @@ function generateEpcPayload(payment) {
     nameAscii,
     iban,
     amount,
-    purpose,
+    "",
     structuredReference,
-    shortened,
+    shortenedRemittance,
     ""
   ].join("\n");
 
@@ -1101,8 +1128,12 @@ function normalizeDecimalAmount(input) {
 function findModel(lines) {
   for (let i = 0; i < lines.length; i++) {
     const compact = lines[i].replace(/\s+/g, "").toUpperCase();
+
     if (/^HR\d{2}$/.test(compact)) return compact;
     if (/^\d{2}$/.test(compact)) return "HR" + compact;
+
+    const embedded = compact.match(/HR(\d{2})/);
+    if (embedded) return "HR" + embedded[1];
   }
   return "";
 }
@@ -1111,7 +1142,10 @@ function findReference(lines) {
   let best = "";
 
   for (let i = 0; i < lines.length; i++) {
-    const compact = lines[i].replace(/\s+/g, "");
+    const compact = lines[i]
+      .replace(/\s+/g, "")
+      .replace(/[^A-Za-z0-9\-\/.]/g, "");
+
     if (/^[A-Z0-9][A-Z0-9\-\/.]{4,79}$/i.test(compact)) {
       if (compact.length > best.length) best = compact;
     }
