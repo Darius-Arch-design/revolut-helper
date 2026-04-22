@@ -4,6 +4,14 @@ const HUB3_HEADER_RE = /^HRVHUB3\d$/i;
 const EPC_MAX_BYTES = 331;
 const MAX_PDF_PAGES_TO_SCAN = 5;
 
+if (!window.ZXing) {
+  throw new Error("ZXing nije učitan. Provjeri script src u index.html.");
+}
+
+if (!ZXing.BrowserMultiFormatReader) {
+  throw new Error("BrowserMultiFormatReader nije dostupan u učitanoj ZXing verziji.");
+}
+
 if (window.pdfjsLib) {
   pdfjsLib.GlobalWorkerOptions.workerSrc =
     "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -63,12 +71,13 @@ function createCodeReader(charset) {
     ZXing.BarcodeFormat.QR_CODE,
     ZXing.BarcodeFormat.PDF_417
   ]);
+  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
 
   if (charset) {
     hints.set(ZXing.DecodeHintType.CHARACTER_SET, charset);
   }
 
-  return new ZXing.BrowserMultiFormatReader(hints);
+  return new ZXing.BrowserMultiFormatReader(hints, 300);
 }
 
 function bindEvents() {
@@ -151,8 +160,11 @@ async function onFileSelected(e) {
       processDecodedText(decoded.text, "slika");
     }
   } catch (err) {
-    console.error(err);
-    setStatus("Ne mogu očitati QR/PDF417 iz odabrane datoteke.", "err");
+    console.error("UPLOAD/DECODE ERROR:", err);
+    setStatus(
+      "Greška: " + (err && err.message ? err.message : String(err)),
+      "err"
+    );
   }
 }
 
@@ -178,7 +190,9 @@ async function decodePdfFile(file) {
     try {
       const decoded = await decodeImageWithFallback(img);
       return decoded;
-    } catch (_) {}
+    } catch (err) {
+      console.warn("PDF page decode failed:", pageNumber, err);
+    }
   }
 
   throw new Error("Barkod nije pronađen ni na jednoj podržanoj PDF stranici.");
@@ -204,7 +218,7 @@ async function renderPdfPageToImage(pdf, pageNumber) {
     transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null
   }).promise;
 
-  return loadImageFromDataUrl(canvas.toDataURL("image/png"));
+  return loadImageFromCanvas(canvas);
 }
 
 async function decodeImageWithFallback(img) {
@@ -217,15 +231,17 @@ async function decodeImageWithFallback(img) {
     try {
       const result = await reader.decodeFromImageElement(img);
       if (result && result.text) {
-        const normalized = normalizeRawText(result.text);
+        const text = extractResultText(result);
+        const normalized = normalizeRawText(text);
         const score = scoreDecodedCandidate(normalized);
 
         if (score > bestScore) {
-          best = { text: result.text, charset };
+          best = { text, charset };
           bestScore = score;
         }
       }
-    } catch (_) {
+    } catch (err) {
+      console.warn("ZXing decode failed for charset:", charset, err);
     } finally {
       try { reader.reset(); } catch (_) {}
     }
@@ -239,6 +255,18 @@ async function decodeImageWithFallback(img) {
 }
 
 async function decodeImageFileRobust(file) {
+  const originalImg = await loadImageFromFile(file);
+
+  try {
+    setStatus("Pokušavam očitati originalnu sliku...", "warn");
+    const directDecoded = await decodeImageWithFallback(originalImg);
+    if (directDecoded && directDecoded.text) {
+      return directDecoded;
+    }
+  } catch (err) {
+    console.warn("Original image decode failed:", err);
+  }
+
   const source = await loadBitmapFromFile(file);
   const variants = buildImageVariants(source);
 
@@ -289,7 +317,7 @@ function buildImageVariants(source) {
   const variants = [];
 
   const normal = drawSourceToCanvas(source, {
-    maxSide: 2200,
+    maxSide: 2600,
     grayscale: false,
     threshold: false,
     contrastBoost: 1
@@ -297,7 +325,7 @@ function buildImageVariants(source) {
   variants.push(normal);
 
   const grayscale = drawSourceToCanvas(source, {
-    maxSide: 2200,
+    maxSide: 2600,
     grayscale: true,
     threshold: false,
     contrastBoost: 1.15
@@ -305,7 +333,7 @@ function buildImageVariants(source) {
   variants.push(grayscale);
 
   const thresholded = drawSourceToCanvas(source, {
-    maxSide: 2200,
+    maxSide: 2600,
     grayscale: true,
     threshold: true,
     contrastBoost: 1.2
@@ -328,7 +356,7 @@ function drawSourceToCanvas(source, options) {
   const srcW = source.width || source.naturalWidth;
   const srcH = source.height || source.naturalHeight;
 
-  const maxSide = opts.maxSide || 2200;
+  const maxSide = opts.maxSide || 2600;
   const scale = Math.min(1, maxSide / Math.max(srcW, srcH));
 
   const canvas = document.createElement("canvas");
@@ -399,30 +427,46 @@ async function decodeCanvasWithCharsetFallback(canvas) {
   let best = null;
   let bestScore = -Infinity;
 
-  for (const charset of CHARSET_CANDIDATES) {
-    const reader = createCodeReader(charset);
+  const blob = await canvasToBlob(canvas, "image/png");
+  const objectUrl = URL.createObjectURL(blob);
 
-    try {
-      const dataUrl = canvas.toDataURL("image/png");
-      const img = await loadImageFromDataUrl(dataUrl);
-      const result = await reader.decodeFromImageElement(img);
+  try {
+    const img = await loadImageFromUrl(objectUrl);
 
-      if (result && result.text) {
-        const normalized = normalizeRawText(result.text);
-        const score = scoreDecodedCandidate(normalized);
+    for (const charset of CHARSET_CANDIDATES) {
+      const reader = createCodeReader(charset);
 
-        if (score > bestScore) {
-          best = { text: result.text, charset };
-          bestScore = score;
+      try {
+        const result = await reader.decodeFromImageElement(img);
+
+        if (result && result.text) {
+          const text = extractResultText(result);
+          const normalized = normalizeRawText(text);
+          const score = scoreDecodedCandidate(normalized);
+
+          if (score > bestScore) {
+            best = { text, charset };
+            bestScore = score;
+          }
         }
+      } catch (err) {
+        console.warn("ZXing decode failed for charset:", charset, err);
+      } finally {
+        try { reader.reset(); } catch (_) {}
       }
-    } catch (_) {
-    } finally {
-      try { reader.reset(); } catch (_) {}
     }
+  } finally {
+    URL.revokeObjectURL(objectUrl);
   }
 
   return best;
+}
+
+function extractResultText(result) {
+  if (!result) return "";
+  if (typeof result.text === "string") return result.text;
+  if (typeof result.getText === "function") return result.getText();
+  return String(result);
 }
 
 function clampColor(v) {
@@ -479,12 +523,20 @@ async function startCamera() {
 
     setStatus("Kamera je aktivna. Usmjeri barkod prema kameri.", "warn");
 
-    await codeReader.decodeFromVideoDevice(null, "video", function (result) {
+    await codeReader.decodeFromVideoDevice(null, "video", function (result, err) {
       if (state.locked) return;
-      if (result && result.text) {
-        state.locked = true;
-        processDecodedText(result.text, "kamera");
-        stopCamera();
+
+      if (result) {
+        const text = extractResultText(result);
+        if (text) {
+          state.locked = true;
+          processDecodedText(text, "kamera");
+          stopCamera();
+        }
+      }
+
+      if (err && err.name && err.name !== "NotFoundException") {
+        console.warn("Camera decode warning:", err);
       }
     });
   } catch (err) {
@@ -816,7 +868,7 @@ function normalizeModel(value) {
 function normalizeReference(value) {
   return cleanDisplayField(value, 80)
     .replace(/\s+/g, "")
-    .replace(/[^A-Za-z0-9\-\/.]/g, "");
+    .replace(/[^A-Za-z0-9\-/.]/g, "");
 }
 
 function normalizePurposeCode(value) {
@@ -828,7 +880,7 @@ function buildCombinedReference(model, referenceNumber) {
   const cleanModel = (model || "").replace(/\s+/g, "").toUpperCase();
   const cleanRef = (referenceNumber || "")
     .replace(/\s+/g, "")
-    .replace(/[^A-Za-z0-9\-\/.]/g, "");
+    .replace(/[^A-Za-z0-9\-/.]/g, "");
 
   if (cleanModel && cleanRef) return cleanModel + " " + cleanRef;
   if (cleanRef) return cleanRef;
@@ -1131,9 +1183,9 @@ function findReference(lines) {
   for (let i = 0; i < lines.length; i++) {
     const compact = lines[i]
       .replace(/\s+/g, "")
-      .replace(/[^A-Za-z0-9\-\/.]/g, "");
+      .replace(/[^A-Za-z0-9\-/.]/g, "");
 
-    if (/^[A-Z0-9][A-Z0-9\-\/.]{4,79}$/i.test(compact)) {
+    if (/^[A-Z0-9][A-Z0-9\-/.]{4,79}$/i.test(compact)) {
       if (compact.length > best.length) best = compact;
     }
   }
@@ -1488,7 +1540,7 @@ function loadImageFromFile(file) {
   });
 }
 
-function loadImageFromDataUrl(dataUrl) {
+function loadImageFromUrl(url) {
   return new Promise(function (resolve, reject) {
     const img = new Image();
 
@@ -1497,37 +1549,49 @@ function loadImageFromDataUrl(dataUrl) {
     };
 
     img.onerror = function () {
-      reject(new Error("Ne mogu učitati renderiranu sliku."));
+      reject(new Error("Ne mogu učitati sliku s URL-a."));
     };
 
-    img.src = dataUrl;
+    img.src = url;
   });
 }
 
-function canvasToBlob(canvas, type) {
+async function loadImageFromCanvas(canvas) {
+  const blob = await canvasToBlob(canvas, "image/png");
+  const objectUrl = URL.createObjectURL(blob);
+
+  try {
+    return await loadImageFromUrl(objectUrl);
+  } finally {
+    setTimeout(function () {
+      URL.revokeObjectURL(objectUrl);
+    }, 1000);
+  }
+}
+
+function canvasToBlob(canvas, type, quality) {
   return new Promise(function (resolve, reject) {
     if (canvas.toBlob) {
       canvas.toBlob(function (blob) {
         if (blob) resolve(blob);
-        else reject(new Error("Blob nije generiran."));
-      }, type || "image/png");
+        else reject(new Error("canvas.toBlob nije uspio."));
+      }, type || "image/png", quality);
       return;
     }
 
     try {
-      const dataUrl = canvas.toDataURL(type || "image/png");
-      const parts = dataUrl.split(",");
-      const header = parts[0];
-      const data = parts[1];
-      const mime = header.split(":")[1].split(";")[0];
-      const binary = atob(data);
-      const array = new Uint8Array(binary.length);
+      const dataUrl = canvas.toDataURL(type || "image/png", quality);
+      const arr = dataUrl.split(",");
+      const mime = arr[0].match(/:(.*?);/)[1];
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
 
-      for (let i = 0; i < binary.length; i++) {
-        array[i] = binary.charCodeAt(i);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
       }
 
-      resolve(new Blob([array], { type: mime }));
+      resolve(new Blob([u8arr], { type: mime }));
     } catch (err) {
       reject(err);
     }
