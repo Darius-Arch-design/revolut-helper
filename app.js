@@ -159,9 +159,8 @@ async function onFileSelected(e) {
       const decoded = await decodePdfFile(file);
       processDecodedText(decoded.text, "pdf");
     } else {
-      setStatus("Čitam sliku...", "warn");
-      const img = await loadImageFromFile(file);
-      const decoded = await decodeImageWithFallback(img);
+      setStatus("Čitam sliku iz uređaja...", "warn");
+      const decoded = await decodeImageFileRobust(file);
       processDecodedText(decoded.text, "slika");
     }
   } catch (err) {
@@ -250,6 +249,197 @@ async function decodeImageWithFallback(img) {
   }
 
   return best;
+}
+
+async function decodeImageFileRobust(file) {
+  const source = await loadBitmapFromFile(file);
+  const variants = buildImageVariants(source);
+
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (let i = 0; i < variants.length; i++) {
+    setStatus("Analiziram sliku iz uređaja... pokušaj " + (i + 1) + " / " + variants.length, "warn");
+    const decoded = await decodeCanvasWithCharsetFallback(variants[i]);
+
+    if (decoded && decoded.text) {
+      const normalized = normalizeRawText(decoded.text);
+      const score = scoreDecodedCandidate(normalized);
+
+      if (score > bestScore) {
+        best = decoded;
+        bestScore = score;
+      }
+    }
+  }
+
+  if (!best) {
+    throw new Error("Kod nije očitan iz slike.");
+  }
+
+  return best;
+}
+
+async function loadBitmapFromFile(file) {
+  if (window.createImageBitmap) {
+    try {
+      return await createImageBitmap(file, { imageOrientation: "from-image" });
+    } catch (_) {}
+  }
+
+  const img = await loadImageFromFile(file);
+  const fallbackCanvas = document.createElement("canvas");
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  fallbackCanvas.width = w;
+  fallbackCanvas.height = h;
+  const ctx = fallbackCanvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, w, h);
+  return fallbackCanvas;
+}
+
+function buildImageVariants(source) {
+  const variants = [];
+
+  const normal = drawSourceToCanvas(source, {
+    maxSide: 2200,
+    grayscale: false,
+    threshold: false,
+    contrastBoost: 1
+  });
+  variants.push(normal);
+
+  const grayscale = drawSourceToCanvas(source, {
+    maxSide: 2200,
+    grayscale: true,
+    threshold: false,
+    contrastBoost: 1.15
+  });
+  variants.push(grayscale);
+
+  const thresholded = drawSourceToCanvas(source, {
+    maxSide: 2200,
+    grayscale: true,
+    threshold: true,
+    contrastBoost: 1.2
+  });
+  variants.push(thresholded);
+
+  variants.push(rotateCanvas(normal, 90));
+  variants.push(rotateCanvas(normal, 180));
+  variants.push(rotateCanvas(normal, 270));
+
+  variants.push(rotateCanvas(grayscale, 90));
+  variants.push(rotateCanvas(grayscale, 180));
+  variants.push(rotateCanvas(grayscale, 270));
+
+  return variants;
+}
+
+function drawSourceToCanvas(source, options) {
+  const opts = options || {};
+  const srcW = source.width || source.naturalWidth;
+  const srcH = source.height || source.naturalHeight;
+
+  const maxSide = opts.maxSide || 2200;
+  const scale = Math.min(1, maxSide / Math.max(srcW, srcH));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(srcW * scale));
+  canvas.height = Math.max(1, Math.round(srcH * scale));
+
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+
+  if (opts.grayscale || opts.threshold || opts.contrastBoost !== 1) {
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    const contrastBoost = opts.contrastBoost || 1;
+
+    for (let i = 0; i < data.length; i += 4) {
+      let r = data[i];
+      let g = data[i + 1];
+      let b = data[i + 2];
+
+      if (contrastBoost !== 1) {
+        r = clampColor((((r / 255 - 0.5) * contrastBoost) + 0.5) * 255);
+        g = clampColor((((g / 255 - 0.5) * contrastBoost) + 0.5) * 255);
+        b = clampColor((((b / 255 - 0.5) * contrastBoost) + 0.5) * 255);
+      }
+
+      if (opts.grayscale || opts.threshold) {
+        const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+        r = gray;
+        g = gray;
+        b = gray;
+      }
+
+      if (opts.threshold) {
+        const bw = r > 160 ? 255 : 0;
+        r = bw;
+        g = bw;
+        b = bw;
+      }
+
+      data[i] = r;
+      data[i + 1] = g;
+      data[i + 2] = b;
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+  }
+
+  return canvas;
+}
+
+function rotateCanvas(sourceCanvas, degrees) {
+  const radians = degrees * Math.PI / 180;
+  const swapSides = degrees === 90 || degrees === 270;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = swapSides ? sourceCanvas.height : sourceCanvas.width;
+  canvas.height = swapSides ? sourceCanvas.width : sourceCanvas.height;
+
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate(radians);
+  ctx.drawImage(sourceCanvas, -sourceCanvas.width / 2, -sourceCanvas.height / 2);
+
+  return canvas;
+}
+
+async function decodeCanvasWithCharsetFallback(canvas) {
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (const charset of CHARSET_CANDIDATES) {
+    const reader = createCodeReader(charset);
+
+    try {
+      const dataUrl = canvas.toDataURL("image/png");
+      const img = await loadImageFromDataUrl(dataUrl);
+      const result = await reader.decodeFromImageElement(img);
+
+      if (result && result.text) {
+        const normalized = normalizeRawText(result.text);
+        const score = scoreDecodedCandidate(normalized);
+
+        if (score > bestScore) {
+          best = { text: result.text, charset };
+          bestScore = score;
+        }
+      }
+    } catch (_) {
+    } finally {
+      try { reader.reset(); } catch (_) {}
+    }
+  }
+
+  return best;
+}
+
+function clampColor(v) {
+  return Math.max(0, Math.min(255, Math.round(v)));
 }
 
 function scoreDecodedCandidate(text) {
@@ -1336,8 +1526,10 @@ function loadImageFromFile(file) {
     const objectUrl = URL.createObjectURL(file);
 
     img.onload = function () {
-      URL.revokeObjectURL(objectUrl);
       resolve(img);
+      setTimeout(function () {
+        URL.revokeObjectURL(objectUrl);
+      }, 1000);
     };
 
     img.onerror = function () {
