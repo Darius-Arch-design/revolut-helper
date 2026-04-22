@@ -187,8 +187,8 @@ async function decodePdfFile(file) {
 
   for (let pageNumber = 1; pageNumber <= pagesToTry; pageNumber++) {
     setStatus("Čitam PDF stranicu " + pageNumber + " od " + pagesToTry + "...", "warn");
-
     const img = await renderPdfPageToImage(pdf, pageNumber);
+
     try {
       const decoded = await decodeImageWithFallback(img);
       return decoded;
@@ -201,7 +201,7 @@ async function decodePdfFile(file) {
 async function renderPdfPageToImage(pdf, pageNumber) {
   const page = await pdf.getPage(pageNumber);
   const scale = 2.2;
-  const viewport = page.getViewport({ scale: scale });
+  const viewport = page.getViewport({ scale });
   const outputScale = window.devicePixelRatio || 1;
 
   const canvas = document.createElement("canvas");
@@ -214,12 +214,11 @@ async function renderPdfPageToImage(pdf, pageNumber) {
 
   await page.render({
     canvasContext: ctx,
-    viewport: viewport,
+    viewport,
     transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null
   }).promise;
 
-  const dataUrl = canvas.toDataURL("image/png");
-  return loadImageFromDataUrl(dataUrl);
+  return loadImageFromDataUrl(canvas.toDataURL("image/png"));
 }
 
 async function decodeImageWithFallback(img) {
@@ -228,6 +227,7 @@ async function decodeImageWithFallback(img) {
 
   for (const charset of CHARSET_CANDIDATES) {
     const reader = createCodeReader(charset);
+
     try {
       const result = await reader.decodeFromImageElement(img);
       if (result && result.text) {
@@ -235,7 +235,7 @@ async function decodeImageWithFallback(img) {
         const score = scoreDecodedCandidate(normalized);
 
         if (score > bestScore) {
-          best = { text: result.text, charset: charset };
+          best = { text: result.text, charset };
           bestScore = score;
         }
       }
@@ -256,7 +256,7 @@ function scoreDecodedCandidate(text) {
   const v = text || "";
   let score = 0;
 
-  const letters = v.match(/\p{L}/gu);
+  const letters = v.match(/[A-Za-zČĆĐŠŽčćđšž]/g);
   if (letters) score += letters.length * 1.2;
 
   const croatianLetters = v.match(/[čČćĆšŠžŽđĐ]/g);
@@ -538,7 +538,7 @@ function scoreCroatianText(value) {
   const v = value || "";
   let score = 0;
 
-  const validLetters = v.match(/\p{L}/gu);
+  const validLetters = v.match(/[A-Za-zČĆĐŠŽčćđšž]/g);
   if (validLetters) score += validLetters.length * 1.2;
 
   const croatianLetters = v.match(/[čČćĆšŠžŽđĐ]/g);
@@ -547,7 +547,7 @@ function scoreCroatianText(value) {
   const mojibake = v.match(/(Ã.|Ä.|Å.|�)/g);
   if (mojibake) score -= mojibake.length * 8;
 
-  const words = v.match(/\p{L}+/gu);
+  const words = v.match(/[A-Za-zČĆĐŠŽčćđšž]{2,}/g);
   if (words) score += words.length * 0.5;
 
   return score;
@@ -655,3 +655,742 @@ function validatePayment(payment) {
 
   if (payment.iban && !validateIBAN(payment.iban)) {
     errors.push("IBAN je pronađen, ali nije valjan.");
+  }
+
+  if (!payment.recipientName) {
+    errors.push("Naziv primatelja nije pronađen.");
+  }
+
+  if (!payment.amount) {
+    warnings.push("Iznos nije pronađen.");
+  }
+
+  if (!payment.combinedReference) {
+    warnings.push("Model i poziv nisu pronađeni.");
+  }
+
+  if (!payment.description) {
+    warnings.push("Opis plaćanja nije pronađen.");
+  }
+
+  return {
+    errors,
+    warnings,
+    validForEpc: errors.length === 0
+  };
+}
+
+function validateIBAN(iban) {
+  const value = (iban || "").replace(/\s+/g, "").toUpperCase();
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(value)) return false;
+
+  const rearranged = value.slice(4) + value.slice(0, 4);
+  let expanded = "";
+
+  for (let i = 0; i < rearranged.length; i++) {
+    const ch = rearranged[i];
+    expanded += /[A-Z]/.test(ch) ? String(ch.charCodeAt(0) - 55) : ch;
+  }
+
+  let remainder = 0;
+  for (let i = 0; i < expanded.length; i++) {
+    remainder = (remainder * 10 + Number(expanded[i])) % 97;
+  }
+
+  return remainder === 1;
+}
+
+function extractValidIbanFromField(value) {
+  const compact = (value || "").replace(/\s+/g, "").toUpperCase();
+  const matches = compact.match(/[A-Z]{2}\d{2}[A-Z0-9]{10,30}/g) || [];
+  for (let i = 0; i < matches.length; i++) {
+    if (validateIBAN(matches[i])) return matches[i];
+  }
+  return "";
+}
+
+function findValidIbanAnywhere(lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const found = extractValidIbanFromField(lines[i]);
+    if (found) return found;
+  }
+  return "";
+}
+
+/* ---------------- EPC ---------------- */
+
+function generateEpcPayload(payment) {
+  const iban = (payment.iban || "").replace(/\s+/g, "").toUpperCase();
+  const amount = payment.amount ? "EUR" + Number(payment.amount).toFixed(2) : "";
+  const purpose = payment.purposeCode || "";
+  const structuredReference = isIso11649Reference(payment.referenceNumber)
+    ? payment.referenceNumber.replace(/\s+/g, "").toUpperCase()
+    : "";
+
+  const nameUtf8 = toEpcField(payment.recipientName, 70, { mode: "name", transliterate: false });
+
+  let unstructuredBase = "";
+  if (!structuredReference) {
+    unstructuredBase = [
+      payment.referenceNumber || "",
+      payment.purposeCode || "",
+      payment.description || ""
+    ].filter(Boolean).join(" ");
+  } else {
+    unstructuredBase = [
+      payment.purposeCode || "",
+      payment.description || ""
+    ].filter(Boolean).join(" ");
+  }
+
+  const descUtf8 = toEpcField(unstructuredBase, 140, { mode: "text", transliterate: false });
+
+  let payload = [
+    "BCD",
+    "002",
+    "1",
+    "SCT",
+    "",
+    nameUtf8,
+    iban,
+    amount,
+    purpose,
+    structuredReference,
+    descUtf8,
+    ""
+  ].join("\n");
+
+  if (utf8ByteLength(payload) <= EPC_MAX_BYTES) {
+    return {
+      payload,
+      encoding: "1",
+      charsetLabel: "UTF-8"
+    };
+  }
+
+  const nameAscii = toEpcField(payment.recipientName, 70, { mode: "name", transliterate: true });
+  const descAscii = toEpcField(unstructuredBase, 140, { mode: "text", transliterate: true });
+
+  payload = [
+    "BCD",
+    "002",
+    "1",
+    "SCT",
+    "",
+    nameAscii,
+    iban,
+    amount,
+    purpose,
+    structuredReference,
+    descAscii,
+    ""
+  ].join("\n");
+
+  if (utf8ByteLength(payload) <= EPC_MAX_BYTES) {
+    return {
+      payload,
+      encoding: "1",
+      charsetLabel: "UTF-8 / transliterirano"
+    };
+  }
+
+  const shortened = trimUtf8Bytes(descAscii, 70);
+
+  payload = [
+    "BCD",
+    "002",
+    "1",
+    "SCT",
+    "",
+    nameAscii,
+    iban,
+    amount,
+    purpose,
+    structuredReference,
+    shortened,
+    ""
+  ].join("\n");
+
+  return {
+    payload,
+    encoding: "1",
+    charsetLabel: "UTF-8 / skraćeno"
+  };
+}
+
+function isIso11649Reference(value) {
+  const ref = (value || "").replace(/\s+/g, "").toUpperCase();
+  return /^RF\d{2}[A-Z0-9]{1,21}$/.test(ref);
+}
+
+function toEpcField(value, maxLen, options) {
+  const opts = options || {};
+  let v = cleanDisplayField(value || "", maxLen);
+
+  if (opts.transliterate) {
+    v = transliterateCroatianToLatin(v);
+  }
+
+  v = sanitizeEpcText(v, maxLen);
+
+  if (opts.mode === "name") v = v.substring(0, 70);
+  if (opts.mode === "text") v = v.substring(0, 140);
+
+  return v;
+}
+
+function sanitizeEpcText(value, maxLen) {
+  return normalizeUnicodeDisplay(value || "")
+    .replace(/[\u0000-\u001F]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .substring(0, maxLen);
+}
+
+function transliterateCroatianToLatin(value) {
+  return (value || "")
+    .replace(/Đ/g, "Dj")
+    .replace(/đ/g, "dj")
+    .replace(/Č/g, "C")
+    .replace(/č/g, "c")
+    .replace(/Ć/g, "C")
+    .replace(/ć/g, "c")
+    .replace(/Š/g, "S")
+    .replace(/š/g, "s")
+    .replace(/Ž/g, "Z")
+    .replace(/ž/g, "z");
+}
+
+function utf8ByteLength(str) {
+  return new TextEncoder().encode(str).length;
+}
+
+function trimUtf8Bytes(str, maxBytes) {
+  let out = "";
+  for (const ch of str) {
+    const next = out + ch;
+    if (utf8ByteLength(next) > maxBytes) break;
+    out = next;
+  }
+  return out;
+}
+
+/* ---------------- FALLBACK HELPERS ---------------- */
+
+function findCurrency(lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const compact = lines[i].replace(/\s+/g, "").toUpperCase();
+    if (compact === "EUR" || compact === "HRK") return compact;
+  }
+  return "EUR";
+}
+
+function findAmountAnywhere(lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const digitsOnly = lines[i].replace(/[^\d]/g, "");
+    if (/^\d{10,15}$/.test(digitsOnly)) {
+      const parsed = parseHubAmount(digitsOnly);
+      if (parsed) return parsed;
+    }
+
+    const m = lines[i].match(/\b\d{1,3}(?:[.\s]\d{3})*(?:[.,]\d{2})\b/);
+    if (m) return normalizeDecimalAmount(m[0]);
+  }
+  return "";
+}
+
+function normalizeDecimalAmount(input) {
+  const raw = (input || "").replace(/\s/g, "");
+  if (raw.indexOf(",") !== -1 && raw.indexOf(".") !== -1) {
+    return raw.replace(/\./g, "").replace(",", ".");
+  }
+  if (raw.indexOf(",") !== -1) return raw.replace(",", ".");
+  return raw;
+}
+
+function findModel(lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const compact = lines[i].replace(/\s+/g, "").toUpperCase();
+    if (/^HR\d{2}$/.test(compact)) return compact;
+    if (/^\d{2}$/.test(compact)) return "HR" + compact;
+  }
+  return "";
+}
+
+function findReference(lines) {
+  let best = "";
+
+  for (let i = 0; i < lines.length; i++) {
+    const compact = lines[i].replace(/\s+/g, "");
+    if (/^[A-Z0-9][A-Z0-9\-\/.]{4,79}$/i.test(compact)) {
+      if (compact.length > best.length) best = compact;
+    }
+  }
+
+  return best;
+}
+
+function findPurposeCode(lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const compact = lines[i].replace(/\s+/g, "").toUpperCase();
+    if (/^[A-Z0-9]{4}$/.test(compact) && compact !== "EUR" && !/^HR\d{2}$/.test(compact)) {
+      return compact;
+    }
+  }
+  return "";
+}
+
+function hasLetters(value) {
+  return /[A-Za-zČĆĐŠŽčćđšž]/.test(value || "");
+}
+
+function findLikelyPayer(lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const clean = cleanDisplayField(lines[i], 80);
+    const compact = clean.replace(/\s+/g, "").toUpperCase();
+
+    if (!clean) continue;
+    if (/^\d+$/.test(compact)) continue;
+    if (/^HR\d{2}$/.test(compact)) continue;
+    if (compact === "EUR") continue;
+    if (!hasLetters(clean)) continue;
+    if (clean.length < 3) continue;
+
+    return clean;
+  }
+
+  return "";
+}
+
+function findLikelyRecipient(lines, iban) {
+  for (let i = 0; i < lines.length; i++) {
+    const clean = cleanDisplayField(lines[i], 80);
+    const compact = clean.replace(/\s+/g, "").toUpperCase();
+
+    if (!clean) continue;
+    if (/^\d+$/.test(compact)) continue;
+    if (/^HR\d{2}$/.test(compact)) continue;
+    if (compact === "EUR") continue;
+    if (compact === (iban || "").toUpperCase()) continue;
+    if (!hasLetters(clean)) continue;
+    if (clean.length < 3) continue;
+
+    return clean;
+  }
+
+  return "";
+}
+
+function findLikelyDescription(lines, payment) {
+  const taken = {};
+  [
+    payment.payerName,
+    payment.recipientName,
+    payment.iban,
+    payment.model,
+    payment.referenceNumber,
+    payment.combinedReference,
+    payment.purposeCode
+  ].forEach(function (v) {
+    if (v) taken[v] = true;
+  });
+
+  for (let i = 0; i < lines.length; i++) {
+    const clean = cleanDisplayField(lines[i], 140);
+    const compact = clean.replace(/\s+/g, "");
+
+    if (!clean) continue;
+    if (taken[clean]) continue;
+    if (/^\d+$/.test(compact)) continue;
+    if (/^HR\d{2}$/.test(compact)) continue;
+    if (clean.length < 4) continue;
+    if (hasLetters(clean)) return clean;
+  }
+
+  return "";
+}
+
+/* ---------------- RENDER ---------------- */
+
+function renderParsedData() {
+  const p = state.payment;
+  const v = state.validation;
+
+  setText(els.parserField, p.parser || "—");
+  setText(els.currencyField, p.currency || "—");
+  setText(els.purposeField, p.purposeCode || "—");
+
+  setText(els.payerField, p.payerName || "—");
+  setText(els.recipientField, p.recipientName || "—");
+  setText(els.ibanField, p.iban || "—");
+  setText(els.accountRawField, p.accountRaw || "—");
+  setText(els.refField, p.combinedReference || "—");
+  setText(els.amountField, p.amount ? Number(p.amount).toFixed(2) + " EUR" : "—");
+  setText(els.descField, p.description || "—");
+
+  setText(els.payerAddress1Field, p.payerAddress1 || "—");
+  setText(els.payerAddress2Field, p.payerAddress2 || "—");
+  setText(els.recipientAddress1Field, p.recipientAddress1 || "—");
+  setText(els.recipientAddress2Field, p.recipientAddress2 || "—");
+  setText(els.headerField, p.header || "—");
+
+  if (v.validForEpc) {
+    let msg = "Osnovna validacija prošla.";
+    if (p.sepaCharsetLabel) msg += " EPC encoding: " + p.sepaCharsetLabel + ".";
+    if (v.warnings.length) msg += " Upozorenja: " + v.warnings.join(" ");
+    setText(els.validationField, msg);
+  } else {
+    setText(els.validationField, v.errors.join(" ") || "—");
+  }
+
+  if (els.warningsBox) {
+    if (v.errors.length) {
+      els.warningsBox.className = "status err";
+      els.warningsBox.textContent = "Greške: " + v.errors.join(" ");
+    } else if (v.warnings.length) {
+      els.warningsBox.className = "status warn";
+      els.warningsBox.textContent = "Upozorenja: " + v.warnings.join(" ");
+    } else {
+      els.warningsBox.className = "status hidden";
+      els.warningsBox.textContent = "";
+    }
+  }
+
+  if (els.rawBox) {
+    if (state.rawText) {
+      let label = "<strong>Raw sadržaj barkoda:</strong>";
+      if (state.rawTextOriginal && state.rawTextOriginal !== state.rawText) {
+        label += ' <span style="color:#475569;">(tekst je automatski normaliziran radi dijakritika)</span>';
+      }
+
+      els.rawBox.className = "status";
+      els.rawBox.innerHTML =
+        label +
+        '<pre style="margin:8px 0 0; white-space:pre-wrap; word-break:break-word; font-family:Consolas,Monaco,monospace; font-size:12px; line-height:1.5;">' +
+        escapeHtml(state.rawText) +
+        "</pre>";
+    } else {
+      els.rawBox.className = "status hidden";
+      els.rawBox.textContent = "";
+    }
+  }
+}
+
+function setText(el, value) {
+  if (el) el.textContent = value;
+}
+
+function renderQr(text) {
+  if (!els.qrContainer) return;
+
+  els.qrContainer.innerHTML = "";
+
+  QRCode.toCanvas(
+    text,
+    {
+      width: 1024,
+      margin: 2,
+      errorCorrectionLevel: "M",
+      color: {
+        dark: "#000000",
+        light: "#FFFFFF"
+      }
+    },
+    function (err, canvas) {
+      if (err) {
+        console.error(err);
+        clearQr("Greška pri generiranju QR-a.");
+        return;
+      }
+
+      canvas.style.width = "240px";
+      canvas.style.height = "240px";
+      canvas.style.aspectRatio = "1 / 1";
+      canvas.style.display = "block";
+
+      els.qrContainer.appendChild(canvas);
+      updateButtons();
+    }
+  );
+}
+
+function clearQr(message) {
+  if (!els.qrContainer) return;
+  els.qrContainer.innerHTML = '<span class="note">' + escapeHtml(message) + "</span>";
+}
+
+function setStatus(message, type) {
+  if (!els.statusBox) return;
+  els.statusBox.className = "status";
+  if (type) els.statusBox.classList.add(type);
+  els.statusBox.textContent = message;
+}
+
+function updateButtons() {
+  const hasIban = !!state.payment.iban;
+  const hasRef = !!state.payment.combinedReference;
+  const hasSepa = !!state.payment.sepaText;
+  const hasCanvas = !!(els.qrContainer && els.qrContainer.querySelector("canvas"));
+
+  if (els.copyIbanBtn) els.copyIbanBtn.disabled = !hasIban;
+  if (els.copyRefBtn) els.copyRefBtn.disabled = !hasRef;
+  if (els.copySepaBtn) els.copySepaBtn.disabled = !hasSepa;
+  if (els.shareQrBtn) els.shareQrBtn.disabled = !(hasSepa && hasCanvas);
+  if (els.saveQrBtn) els.saveQrBtn.disabled = !(hasSepa && hasCanvas);
+}
+
+function resetUiOnly() {
+  [
+    els.parserField,
+    els.currencyField,
+    els.purposeField,
+    els.payerField,
+    els.recipientField,
+    els.ibanField,
+    els.accountRawField,
+    els.refField,
+    els.amountField,
+    els.descField,
+    els.validationField,
+    els.payerAddress1Field,
+    els.payerAddress2Field,
+    els.recipientAddress1Field,
+    els.recipientAddress2Field,
+    els.headerField
+  ].forEach(function (el) {
+    setText(el, "—");
+  });
+
+  if (els.warningsBox) {
+    els.warningsBox.className = "status hidden";
+    els.warningsBox.textContent = "";
+  }
+
+  if (els.rawBox) {
+    els.rawBox.className = "status hidden";
+    els.rawBox.textContent = "";
+  }
+
+  clearQr("QR će se pojaviti nakon uspješnog i valjanog parsiranja.");
+  updateButtons();
+}
+
+function resetParsedData() {
+  state.rawText = "";
+  state.rawTextOriginal = "";
+  state.payment = emptyPayment();
+  state.validation = emptyValidation();
+  window.sepaText = "";
+  resetUiOnly();
+}
+
+function resetAll() {
+  stopCamera();
+  state.lastScanHash = "";
+  resetParsedData();
+  if (els.fileInput) els.fileInput.value = "";
+  setStatus("Čekam skeniranje...");
+}
+
+/* ---------------- ACTIONS ---------------- */
+
+async function copyIBAN() {
+  if (!state.payment.iban) return;
+  await copyText(state.payment.iban, "IBAN kopiran.");
+}
+
+async function copyRef() {
+  if (!state.payment.combinedReference) return;
+  await copyText(state.payment.combinedReference, "Model i poziv kopirani.");
+}
+
+async function copySepa() {
+  if (!state.payment.sepaText) return;
+  await copyText(state.payment.sepaText, "SEPA podaci kopirani.");
+}
+
+async function copyText(text, successMessage) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      fallbackCopy(text);
+    }
+    setStatus(successMessage, "ok");
+  } catch (err) {
+    console.error(err);
+    setStatus("Kopiranje nije uspjelo.", "err");
+  }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "absolute";
+  ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand("copy");
+  document.body.removeChild(ta);
+}
+
+async function shareQrImage() {
+  try {
+    const canvas = els.qrContainer ? els.qrContainer.querySelector("canvas") : null;
+    if (!canvas) {
+      setStatus("QR slika nije dostupna za dijeljenje.", "err");
+      return;
+    }
+
+    const blob = await canvasToBlob(canvas, "image/png");
+    const file = new File([blob], buildQrFilename(), { type: "image/png" });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
+      await navigator.share({
+        files: [file],
+        title: "SEPA QR",
+        text: "SEPA QR za plaćanje"
+      });
+      setStatus("Otvoren je share izbornik.", "ok");
+      return;
+    }
+
+    await saveQrImage();
+  } catch (err) {
+    console.error(err);
+    await saveQrImage();
+  }
+}
+
+async function saveQrImage() {
+  try {
+    const canvas = els.qrContainer ? els.qrContainer.querySelector("canvas") : null;
+
+    if (!canvas) {
+      setStatus("QR slika nije dostupna za download.", "err");
+      return;
+    }
+
+    const filename = buildQrFilename();
+
+    if (canvas.toBlob) {
+      canvas.toBlob(function (blob) {
+        if (!blob) {
+          setStatus("Ne mogu pripremiti QR sliku za download.", "err");
+          return;
+        }
+
+        const url = URL.createObjectURL(blob);
+        triggerDownload(url, filename);
+        setTimeout(function () {
+          URL.revokeObjectURL(url);
+        }, 1000);
+        setStatus("QR slika preuzeta.", "ok");
+      }, "image/png");
+      return;
+    }
+
+    const dataUrl = canvas.toDataURL("image/png");
+    triggerDownload(dataUrl, filename);
+    setStatus("QR slika preuzeta.", "ok");
+  } catch (err) {
+    console.error(err);
+    setStatus("Download QR slike nije uspio.", "err");
+  }
+}
+
+function triggerDownload(url, filename) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+function buildQrFilename() {
+  const iban = (state.payment.iban || "qr").replace(/[^A-Z0-9]/gi, "");
+  const amount = state.payment.amount ? String(state.payment.amount).replace(".", "-") : "bez-iznosa";
+  return "sepa-qr-" + iban.slice(0, 12) + "-" + amount + ".png";
+}
+
+function openRevolut() {
+  window.location.href = "revolut://";
+}
+
+/* ---------------- UTILS ---------------- */
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function loadImageFromFile(file) {
+  return new Promise(function (resolve, reject) {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    img.onload = function () {
+      URL.revokeObjectURL(objectUrl);
+      resolve(img);
+    };
+
+    img.onerror = function () {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Neispravna slika."));
+    };
+
+    img.src = objectUrl;
+  });
+}
+
+function loadImageFromDataUrl(dataUrl) {
+  return new Promise(function (resolve, reject) {
+    const img = new Image();
+
+    img.onload = function () {
+      resolve(img);
+    };
+
+    img.onerror = function () {
+      reject(new Error("Ne mogu učitati renderiranu sliku."));
+    };
+
+    img.src = dataUrl;
+  });
+}
+
+function canvasToBlob(canvas, type) {
+  return new Promise(function (resolve, reject) {
+    if (canvas.toBlob) {
+      canvas.toBlob(function (blob) {
+        if (blob) resolve(blob);
+        else reject(new Error("Blob nije generiran."));
+      }, type || "image/png");
+      return;
+    }
+
+    try {
+      const dataUrl = canvas.toDataURL(type || "image/png");
+      const parts = dataUrl.split(",");
+      const header = parts[0];
+      const data = parts[1];
+      const mime = header.split(":")[1].split(";")[0];
+      const binary = atob(data);
+      const array = new Uint8Array(binary.length);
+
+      for (let i = 0; i < binary.length; i++) {
+        array[i] = binary.charCodeAt(i);
+      }
+
+      resolve(new Blob([array], { type: mime }));
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
