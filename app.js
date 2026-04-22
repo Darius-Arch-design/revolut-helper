@@ -16,27 +16,16 @@ const els = {
   video: document.getElementById("video"),
   qrContainer: document.getElementById("qrContainer"),
   statusBox: document.getElementById("statusBox"),
-  warningsBox: document.getElementById("warningsBox"),
-  rawBox: document.getElementById("rawBox"),
 
-  parserField: document.getElementById("parserField"),
   currencyField: document.getElementById("currencyField"),
   purposeField: document.getElementById("purposeField"),
 
   payerField: document.getElementById("payerField"),
   recipientField: document.getElementById("recipientField"),
   ibanField: document.getElementById("ibanField"),
-  accountRawField: document.getElementById("accountRawField"),
   refField: document.getElementById("refField"),
   amountField: document.getElementById("amountField"),
   descField: document.getElementById("descField"),
-  validationField: document.getElementById("validationField"),
-
-  payerAddress1Field: document.getElementById("payerAddress1Field"),
-  payerAddress2Field: document.getElementById("payerAddress2Field"),
-  recipientAddress1Field: document.getElementById("recipientAddress1Field"),
-  recipientAddress2Field: document.getElementById("recipientAddress2Field"),
-  headerField: document.getElementById("headerField"),
 
   startCameraBtn: document.getElementById("startCameraBtn"),
   stopCameraBtn: document.getElementById("stopCameraBtn"),
@@ -44,7 +33,6 @@ const els = {
 
   copyIbanBtn: document.getElementById("copyIbanBtn"),
   copyRefBtn: document.getElementById("copyRefBtn"),
-  copySepaBtn: document.getElementById("copySepaBtn"),
   shareQrBtn: document.getElementById("shareQrBtn"),
   saveQrBtn: document.getElementById("saveQrBtn"),
   openRevolutBtn: document.getElementById("openRevolutBtn")
@@ -91,7 +79,6 @@ function bindEvents() {
 
   if (els.copyIbanBtn) els.copyIbanBtn.addEventListener("click", copyIBAN);
   if (els.copyRefBtn) els.copyRefBtn.addEventListener("click", copyRef);
-  if (els.copySepaBtn) els.copySepaBtn.addEventListener("click", copySepa);
   if (els.shareQrBtn) els.shareQrBtn.addEventListener("click", shareQrImage);
   if (els.saveQrBtn) els.saveQrBtn.addEventListener("click", saveQrImage);
   if (els.openRevolutBtn) els.openRevolutBtn.addEventListener("click", openRevolut);
@@ -1238,66 +1225,16 @@ function findLikelyDescription(lines, payment) {
 
 function renderParsedData() {
   const p = state.payment;
-  const v = state.validation;
 
-  setText(els.parserField, p.parser || "—");
   setText(els.currencyField, p.currency || "—");
   setText(els.purposeField, p.purposeCode || "—");
 
   setText(els.payerField, p.payerName || "—");
   setText(els.recipientField, p.recipientName || "—");
   setText(els.ibanField, p.iban || "—");
-  setText(els.accountRawField, p.accountRaw || "—");
   setText(els.refField, p.combinedReference || "—");
   setText(els.amountField, p.amount ? Number(p.amount).toFixed(2) + " EUR" : "—");
   setText(els.descField, p.description || "—");
-
-  setText(els.payerAddress1Field, p.payerAddress1 || "—");
-  setText(els.payerAddress2Field, p.payerAddress2 || "—");
-  setText(els.recipientAddress1Field, p.recipientAddress1 || "—");
-  setText(els.recipientAddress2Field, p.recipientAddress2 || "—");
-  setText(els.headerField, p.header || "—");
-
-  if (v.validForEpc) {
-    let msg = "Osnovna validacija prošla.";
-    if (p.sepaCharsetLabel) msg += " EPC encoding: " + p.sepaCharsetLabel + ".";
-    if (v.warnings.length) msg += " Upozorenja: " + v.warnings.join(" ");
-    setText(els.validationField, msg);
-  } else {
-    setText(els.validationField, v.errors.join(" ") || "—");
-  }
-
-  if (els.warningsBox) {
-    if (v.errors.length) {
-      els.warningsBox.className = "status err";
-      els.warningsBox.textContent = "Greške: " + v.errors.join(" ");
-    } else if (v.warnings.length) {
-      els.warningsBox.className = "status warn";
-      els.warningsBox.textContent = "Upozorenja: " + v.warnings.join(" ");
-    } else {
-      els.warningsBox.className = "status hidden";
-      els.warningsBox.textContent = "";
-    }
-  }
-
-  if (els.rawBox) {
-    if (state.rawText) {
-      let label = "<strong>Raw sadržaj barkoda:</strong>";
-      if (state.rawTextOriginal && state.rawTextOriginal !== state.rawText) {
-        label += ' <span style="color:#475569;">(tekst je automatski normaliziran radi dijakritika)</span>';
-      }
-
-      els.rawBox.className = "status";
-      els.rawBox.innerHTML =
-        label +
-        '<pre style="margin:8px 0 0; white-space:pre-wrap; word-break:break-word; font-family:Consolas,Monaco,monospace; font-size:12px; line-height:1.5;">' +
-        escapeHtml(state.rawText) +
-        "</pre>";
-    } else {
-      els.rawBox.className = "status hidden";
-      els.rawBox.textContent = "";
-    }
-  }
 }
 
 function setText(el, value) {
@@ -1358,42 +1295,23 @@ function updateButtons() {
 
   if (els.copyIbanBtn) els.copyIbanBtn.disabled = !hasIban;
   if (els.copyRefBtn) els.copyRefBtn.disabled = !hasRef;
-  if (els.copySepaBtn) els.copySepaBtn.disabled = !hasSepa;
   if (els.shareQrBtn) els.shareQrBtn.disabled = !(hasSepa && hasCanvas);
   if (els.saveQrBtn) els.saveQrBtn.disabled = !(hasSepa && hasCanvas);
 }
 
 function resetUiOnly() {
   [
-    els.parserField,
     els.currencyField,
     els.purposeField,
     els.payerField,
     els.recipientField,
     els.ibanField,
-    els.accountRawField,
     els.refField,
     els.amountField,
-    els.descField,
-    els.validationField,
-    els.payerAddress1Field,
-    els.payerAddress2Field,
-    els.recipientAddress1Field,
-    els.recipientAddress2Field,
-    els.headerField
+    els.descField
   ].forEach(function (el) {
     setText(el, "—");
   });
-
-  if (els.warningsBox) {
-    els.warningsBox.className = "status hidden";
-    els.warningsBox.textContent = "";
-  }
-
-  if (els.rawBox) {
-    els.rawBox.className = "status hidden";
-    els.rawBox.textContent = "";
-  }
 
   clearQr("QR će se pojaviti nakon uspješnog i valjanog parsiranja.");
   updateButtons();
@@ -1426,11 +1344,6 @@ async function copyIBAN() {
 async function copyRef() {
   if (!state.payment.combinedReference) return;
   await copyText(state.payment.combinedReference, "Model i poziv kopirani.");
-}
-
-async function copySepa() {
-  if (!state.payment.sepaText) return;
-  await copyText(state.payment.sepaText, "SEPA podaci kopirani.");
 }
 
 async function copyText(text, successMessage) {
