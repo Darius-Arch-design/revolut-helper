@@ -260,6 +260,13 @@
       text-align: center;
     }
 
+    #qrContainer canvas {
+      width: 220px;
+      height: 220px;
+      max-width: 100%;
+      image-rendering: pixelated;
+    }
+
     .note {
       margin-top: 12px;
       color: var(--muted);
@@ -353,6 +360,7 @@
           <button id="copyIbanBtn" type="button" disabled>Kopiraj IBAN</button>
           <button id="copyRefBtn" type="button" disabled>Kopiraj model + poziv</button>
           <button id="copySepaBtn" type="button" disabled>Kopiraj SEPA podatke</button>
+          <button id="saveQrBtn" type="button" disabled>Download QR sliku</button>
           <button id="openRevolutBtn" class="primary" type="button">Otvori Revolut</button>
         </div>
 
