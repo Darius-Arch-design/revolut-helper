@@ -294,6 +294,10 @@
       display: none;
     }
 
+    [hidden] {
+      display: none !important;
+    }
+
     .section-spacer {
       margin-top: 16px;
     }
@@ -322,8 +326,8 @@
     <section class="hero">
       <h1>SEPA Scan for Revolut</h1>
       <p>
-        Skeniraj hrvatsku HUB3 uplatnicu iz slike, PDF-a ili kamere, provjeri očitane podatke
-        i pripremi plaćanje za brži unos u Revolutu ili drugoj SEPA aplikaciji.
+        Skeniraj 2D barkod s HUB3 uplatnice iz slike, PDF-a ili kamerom, provjeri očitane podatke
+        i pripremi QR kod za automatsko plaćanje u Revolutu.
       </p>
     </section>
 
@@ -365,14 +369,14 @@
           <button id="copyIbanBtn" type="button" disabled>Kopiraj IBAN</button>
           <button id="copyRefBtn" type="button" disabled>Kopiraj model + poziv</button>
           <button id="copySepaBtn" type="button" disabled hidden>Kopiraj SEPA podatke</button>
-          <button id="shareQrBtn" type="button" disabled>Spremi u Galeriju / Podijeli QR</button>
-          <button id="saveQrBtn" type="button" disabled>Download PNG</button>
+          <button id="shareQrBtn" type="button" disabled>Spremi QR na uređaj ili podijeli QR</button>
+          <button id="saveQrBtn" type="button" disabled>Preuzmi QR u PNG formatu</button>
           <button id="openRevolutBtn" class="primary" type="button">Otvori Revolut</button>
         </div>
 
         <p class="note" hidden>
-          Na iPhoneu prvo probaj “Spremi u Galeriju / Podijeli QR”. Ako to ne uspije,
-          ostaje fallback “Download PNG”.
+          Na iPhoneu prvo probaj “Spremi QR na uređaj ili podijeli QR”. Ako to ne uspije,
+          ostaje fallback “Preuzmi QR u PNG formatu”.
         </p>
       </section>
     </div>
@@ -386,12 +390,12 @@
           <div id="parserField" class="field-value mono">—</div>
         </div>
 
-        <div class="field">
+        <div class="field" hidden>
           <span class="field-label">Valuta</span>
           <div id="currencyField" class="field-value mono">—</div>
         </div>
 
-        <div class="field">
+        <div class="field" hidden>
           <span class="field-label">Šifra namjene</span>
           <div id="purposeField" class="field-value mono">—</div>
         </div>
@@ -438,7 +442,7 @@
       </div>
 
       <div id="warningsBox" class="status hidden" role="alert" aria-live="assertive" aria-atomic="true"></div>
-      <div id="rawBox" class="status hidden"></div>
+      <div id="rawBox" class="status hidden" hidden></div>
     </section>
 
     <section class="card section-spacer" aria-labelledby="hub3-title" hidden>
@@ -485,7 +489,7 @@
         <li>Provjeri naziv primatelja prije potvrde plaćanja.</li>
         <li>Upiši iznos iz očitanih podataka.</li>
         <li>U referencu zalijepi model i poziv ili SEPA tekst ako treba.</li>
-        <li>Ako QR nije prihvaćen, oslonac ti je ručni unos iz polja iznad.</li>
+        <li>Ako QR nije prihvaćen, ručno kopiraj podatke iz polja iznad.</li>
       </ul>
     </section>
   </main>
