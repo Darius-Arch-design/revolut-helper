@@ -1,92 +1,139 @@
 <!DOCTYPE html>
 <html lang="hr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HUB3 / PDF417 skener</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SEPA Scan for Revolut</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0f766e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <link rel="apple-touch-icon" href="icon-192.jpg" />
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+  <script src="https://unpkg.com/@zxing/library@latest"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
   <style>
     :root {
-      --bg: #f4f6fb;
+      --bg: #f3f6f8;
       --card: #ffffff;
-      --line: #d9dfec;
-      --text: #18212f;
-      --muted: #5f6b7a;
-      --primary: #0d6efd;
-      --primary-dark: #0a58ca;
-      --ok: #177245;
-      --warn: #9a6700;
-      --err: #b42318;
+      --card-2: #f8fafc;
+      --text: #0f172a;
+      --muted: #475569;
+      --border: #dbe3ea;
+      --primary: #0f766e;
+      --primary-hover: #115e59;
+      --danger: #b91c1c;
+      --danger-bg: #fef2f2;
+      --danger-border: #fecaca;
+      --ok: #166534;
+      --ok-bg: #ecfdf5;
+      --ok-border: #bbf7d0;
+      --warn: #b45309;
+      --warn-bg: #fffbeb;
+      --warn-border: #fde68a;
+      --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
       --radius: 16px;
-      --shadow: 0 12px 30px rgba(18, 38, 63, 0.08);
     }
 
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+    }
 
     body {
       margin: 0;
-      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      background: linear-gradient(180deg, #f7f9fc 0%, var(--bg) 100%);
+      font-family: Arial, sans-serif;
       color: var(--text);
+      background: linear-gradient(180deg, #eef5f7 0%, #f8fbfc 100%);
+      padding: 16px;
+      line-height: 1.45;
     }
 
-    .wrap {
-      width: min(1100px, calc(100% - 24px));
-      margin: 24px auto 48px;
-      display: grid;
-      gap: 18px;
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #fff;
+      color: var(--text);
+      padding: 10px 12px;
+      z-index: 1000;
+      border-radius: 10px;
+      border: 1px solid var(--border);
     }
 
-    .card {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 18px;
+    .skip-link:focus {
+      left: 16px;
+      top: 16px;
     }
 
-    h1 {
-      font-size: clamp(1.6rem, 1.2rem + 1.5vw, 2.4rem);
+    .app {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .hero {
+      margin-bottom: 16px;
+    }
+
+    .hero h1 {
       margin: 0 0 8px;
+      font-size: 30px;
+      line-height: 1.15;
     }
 
-    p.lead {
+    .hero p {
       margin: 0;
       color: var(--muted);
       line-height: 1.6;
+      max-width: 72ch;
     }
 
     .grid {
       display: grid;
-      grid-template-columns: 1.1fr 0.9fr;
-      gap: 18px;
+      grid-template-columns: 1fr;
+      gap: 16px;
     }
 
-    .controls {
-      display: grid;
-      gap: 12px;
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
     }
 
-    .button-row,
-    .action-row {
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 20px;
+    }
+
+    .actions {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
+      margin-top: 12px;
     }
 
     button,
     .file-label {
       appearance: none;
-      border: 1px solid var(--line);
-      background: #fff;
-      color: var(--text);
+      border: 0;
       border-radius: 12px;
       padding: 12px 14px;
-      font: inherit;
-      font-weight: 600;
+      font-size: 15px;
       cursor: pointer;
-      transition: .18s ease;
-      text-decoration: none;
+      background: #e8eef2;
+      color: var(--text);
+      transition: background 0.2s ease, opacity 0.2s ease, transform 0.1s ease;
       min-height: 44px;
+      text-decoration: none;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -94,21 +141,26 @@
 
     button:hover,
     .file-label:hover {
-      transform: translateY(-1px);
-      border-color: #bfd0ff;
+      background: #dde7ec;
     }
 
-    button.primary,
-    .file-label {
+    button:active,
+    .file-label:active {
+      transform: translateY(1px);
+    }
+
+    button.primary {
       background: var(--primary);
       color: #fff;
-      border-color: var(--primary);
     }
 
-    button.primary:hover,
-    .file-label:hover {
-      background: var(--primary-dark);
-      border-color: var(--primary-dark);
+    button.primary:hover {
+      background: var(--primary-hover);
+    }
+
+    button.danger {
+      background: #fee2e2;
+      color: var(--danger);
     }
 
     button:disabled {
@@ -121,204 +173,323 @@
       display: none;
     }
 
-    .status {
-      padding: 12px 14px;
-      border-radius: 12px;
-      background: #eef3ff;
-      border: 1px solid #d7e3ff;
-      color: #284b9b;
-      font-weight: 600;
-      min-height: 48px;
-      display: flex;
-      align-items: center;
-    }
-
-    .status.ok {
-      background: #edf9f1;
-      border-color: #c8ecd4;
-      color: var(--ok);
-    }
-
-    .status.warn {
-      background: #fff7e6;
-      border-color: #f2ddb2;
-      color: var(--warn);
-    }
-
-    .status.err {
-      background: #fff1f1;
-      border-color: #f4c7c7;
-      color: var(--err);
-    }
-
-    .video-shell {
-      border: 1px dashed var(--line);
-      border-radius: 16px;
-      padding: 12px;
-      background: #fbfcff;
+    .media-wrap {
+      margin-top: 12px;
     }
 
     video {
       width: 100%;
-      max-height: 360px;
-      background: #0f1720;
+      max-width: 420px;
       border-radius: 14px;
-      object-fit: cover;
+      background: #0f172a;
+      border: 1px solid var(--border);
+      display: block;
     }
 
-    .hint {
-      margin-top: 10px;
+    .status {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: var(--card-2);
+      border: 1px solid var(--border);
       color: var(--muted);
-      font-size: 0.95rem;
-      line-height: 1.55;
+      font-size: 14px;
+      line-height: 1.5;
     }
 
-    .fields {
+    .status.ok {
+      background: var(--ok-bg);
+      border-color: var(--ok-border);
+      color: var(--ok);
+    }
+
+    .status.warn {
+      background: var(--warn-bg);
+      border-color: var(--warn-border);
+      color: var(--warn);
+    }
+
+    .status.err {
+      background: var(--danger-bg);
+      border-color: var(--danger-border);
+      color: var(--danger);
+    }
+
+    .result-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
+      grid-template-columns: 1fr;
+      gap: 10px;
     }
 
     .field {
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: #fcfdff;
-      padding: 12px 14px;
+      background: var(--card-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      min-height: 84px;
     }
 
-    .field.full {
-      grid-column: 1 / -1;
-    }
-
-    .label {
+    .field-label {
       display: block;
-      font-size: 0.82rem;
+      font-size: 12px;
       color: var(--muted);
       margin-bottom: 6px;
       text-transform: uppercase;
       letter-spacing: 0.04em;
-      font-weight: 700;
     }
 
-    .value {
-      font-size: 1rem;
+    .field-value {
+      font-size: 15px;
       line-height: 1.5;
       word-break: break-word;
-      min-height: 1.5em;
     }
 
-    .qr-box {
+    .mono {
+      font-family: Consolas, Monaco, monospace;
+    }
+
+    #qrContainer {
       display: grid;
       place-items: center;
-      min-height: 290px;
-      border: 1px dashed var(--line);
-      border-radius: 16px;
-      background: #fbfcff;
-      padding: 16px;
+      min-height: 260px;
+      border: 1px dashed var(--border);
+      border-radius: 14px;
+      background: #fff;
+      padding: 12px;
+      text-align: center;
+      overflow: hidden;
+    }
+
+    #qrContainer canvas,
+    #qrContainer img {
+      width: min(240px, 70vw) !important;
+      height: min(240px, 70vw) !important;
+      aspect-ratio: 1 / 1 !important;
+      object-fit: contain;
+      image-rendering: pixelated;
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
     }
 
     .note {
-      text-align: center;
+      margin-top: 12px;
       color: var(--muted);
       line-height: 1.6;
-      max-width: 28ch;
+      font-size: 14px;
     }
 
-    .subcard-title {
-      margin: 0 0 12px;
-      font-size: 1.05rem;
+    .list {
+      margin: 10px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+      line-height: 1.6;
     }
 
-    @media (max-width: 900px) {
-      .grid,
-      .fields {
-        grid-template-columns: 1fr;
+    .list li {
+      margin-bottom: 6px;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .section-spacer {
+      margin-top: 16px;
+    }
+
+    .inline-note {
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    @media (min-width: 860px) {
+      .grid {
+        grid-template-columns: 1.05fr 0.95fr;
+      }
+
+      .result-grid {
+        grid-template-columns: 1fr 1fr 1fr;
       }
     }
   </style>
 </head>
 <body>
-  <main class="wrap">
-    <section class="card">
-      <h1>HUB3 / PDF417 skener</h1>
-      <p class="lead">Učitaj screenshot, fotografiju ili PDF, ili otvori kameru. Aplikacija pokušava očitati QR ili PDF417 barkod, prikazati podatke i po potrebi generirati EPC QR.</p>
+  <a href="#main-content" class="skip-link">Preskoči na glavni sadržaj</a>
+
+  <main id="main-content" class="app">
+    <section class="hero">
+      <h1>SEPA Scan for Revolut</h1>
+      <p>
+        Skeniraj hrvatsku HUB3 uplatnicu iz slike, PDF-a ili kamere, provjeri očitane podatke
+        i pripremi plaćanje za brži unos u Revolutu ili drugoj SEPA aplikaciji.
+      </p>
     </section>
 
-    <section class="grid">
-      <div class="controls">
-        <div class="card">
-          <div class="button-row">
-            <label for="fileInput" class="file-label">Učitaj sliku ili PDF</label>
-            <input id="fileInput" type="file" accept="image/*,.pdf,application/pdf">
-            <button id="startCameraBtn" class="primary" type="button">Pokreni kameru</button>
-            <button id="stopCameraBtn" type="button" disabled>Zaustavi kameru</button>
-            <button id="rescanBtn" type="button">Reset</button>
-          </div>
-          <div id="statusBox" class="status">Čekam skeniranje...</div>
+    <div class="grid">
+      <section class="card" aria-labelledby="ulaz-title">
+        <h2 id="ulaz-title">Ulaz</h2>
+
+        <label for="fileInput" class="file-label">Odaberi sliku ili PDF</label>
+        <input type="file" id="fileInput" accept="image/*,.pdf,application/pdf" />
+
+        <div class="actions">
+          <button id="startCameraBtn" class="primary" type="button">Pokreni kameru</button>
+          <button id="stopCameraBtn" class="danger" type="button" disabled>Zaustavi kameru</button>
+          <button id="rescanBtn" type="button">Novo skeniranje</button>
         </div>
 
-        <div class="card video-shell">
-          <video id="video" autoplay playsinline muted></video>
-          <div class="hint">Za kameru koristi dovoljno svjetla i drži barkod mirno unutar kadra. Za screenshot i PDF samo odaberi datoteku gore.</div>
+        <div class="media-wrap">
+          <video id="video" autoplay muted playsinline></video>
         </div>
-      </div>
 
-      <div class="card">
-        <h2 class="subcard-title">Generirani QR</h2>
-        <div id="qrContainer" class="qr-box">
+        <div id="statusBox" class="status" role="status" aria-live="polite" aria-atomic="true">
+          Čekam skeniranje...
+        </div>
+
+        <p class="note">
+          Savjet: drži barkod ravno, bez odsjaja i dovoljno blizu kameri. Kod PDF-a
+          aplikacija pokušava očitati prvih nekoliko stranica.
+        </p>
+      </section>
+
+      <section class="card" aria-labelledby="sepa-title">
+        <h2 id="sepa-title">SEPA QR</h2>
+
+        <div id="qrContainer">
           <span class="note">QR će se pojaviti nakon uspješnog i valjanog parsiranja.</span>
         </div>
-        <div class="action-row" style="margin-top:12px;">
+
+        <div class="actions">
           <button id="copyIbanBtn" type="button" disabled>Kopiraj IBAN</button>
-          <button id="copyRefBtn" type="button" disabled>Kopiraj model i poziv</button>
-          <button id="shareQrBtn" type="button" disabled>Podijeli QR</button>
-          <button id="saveQrBtn" type="button" disabled>Spremi QR</button>
-          <button id="openRevolutBtn" type="button">Otvori Revolut</button>
+          <button id="copyRefBtn" type="button" disabled>Kopiraj model + poziv</button>
+          <button id="copySepaBtn" type="button" disabled>Kopiraj SEPA podatke</button>
+          <button id="shareQrBtn" type="button" disabled>Spremi u Galeriju / Podijeli QR</button>
+          <button id="saveQrBtn" type="button" disabled>Download PNG</button>
+          <button id="openRevolutBtn" class="primary" type="button">Otvori Revolut</button>
+        </div>
+
+        <p class="note">
+          Na iPhoneu prvo probaj “Spremi u Galeriju / Podijeli QR”. Ako to ne uspije,
+          ostaje fallback “Download PNG”.
+        </p>
+      </section>
+    </div>
+
+    <section class="card section-spacer" aria-labelledby="ocitani-title">
+      <h2 id="ocitani-title">Očitani podaci</h2>
+
+      <div class="result-grid">
+        <div class="field">
+          <span class="field-label">Parser</span>
+          <div id="parserField" class="field-value mono">—</div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Valuta</span>
+          <div id="currencyField" class="field-value mono">—</div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Šifra namjene</span>
+          <div id="purposeField" class="field-value mono">—</div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Platitelj</span>
+          <div id="payerField" class="field-value">—</div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Primatelj</span>
+          <div id="recipientField" class="field-value">—</div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">IBAN</span>
+          <div id="ibanField" class="field-value mono">—</div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Raw račun / IBAN polje</span>
+          <div id="accountRawField" class="field-value mono">—</div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Model + poziv</span>
+          <div id="refField" class="field-value mono">—</div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Iznos</span>
+          <div id="amountField" class="field-value mono">—</div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Opis plaćanja</span>
+          <div id="descField" class="field-value">—</div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Status validacije</span>
+          <div id="validationField" class="field-value">—</div>
+        </div>
+      </div>
+
+      <div id="warningsBox" class="status hidden" role="alert" aria-live="assertive" aria-atomic="true"></div>
+      <div id="rawBox" class="status hidden"></div>
+    </section>
+
+    <section class="card section-spacer" aria-labelledby="hub3-title">
+      <h2 id="hub3-title">HUB3 detalji</h2>
+
+      <p class="note">
+        Ovaj blok pomaže provjeriti je li barkod parsiran strogo po HUB3 redoslijedu
+        ili je aplikacija morala koristiti fallback logiku.
+      </p>
+
+      <div class="result-grid">
+        <div class="field">
+          <span class="field-label">Adresa platitelja 1</span>
+          <div id="payerAddress1Field" class="field-value">—</div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Adresa platitelja 2</span>
+          <div id="payerAddress2Field" class="field-value">—</div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Adresa primatelja 1</span>
+          <div id="recipientAddress1Field" class="field-value">—</div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Adresa primatelja 2</span>
+          <div id="recipientAddress2Field" class="field-value">—</div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Header</span>
+          <div id="headerField" class="field-value mono">—</div>
         </div>
       </div>
     </section>
 
-    <section class="card">
-      <div class="fields">
-        <div class="field">
-          <span class="label">Valuta</span>
-          <div id="currencyField" class="value">—</div>
-        </div>
-        <div class="field">
-          <span class="label">Šifra namjene</span>
-          <div id="purposeField" class="value">—</div>
-        </div>
-        <div class="field full">
-          <span class="label">Platitelj</span>
-          <div id="payerField" class="value">—</div>
-        </div>
-        <div class="field full">
-          <span class="label">Primatelj</span>
-          <div id="recipientField" class="value">—</div>
-        </div>
-        <div class="field full">
-          <span class="label">IBAN</span>
-          <div id="ibanField" class="value">—</div>
-        </div>
-        <div class="field full">
-          <span class="label">Model i poziv na broj</span>
-          <div id="refField" class="value">—</div>
-        </div>
-        <div class="field">
-          <span class="label">Iznos</span>
-          <div id="amountField" class="value">—</div>
-        </div>
-        <div class="field full">
-          <span class="label">Opis plaćanja</span>
-          <div id="descField" class="value">—</div>
-        </div>
-      </div>
+    <section class="card section-spacer" aria-labelledby="manual-title">
+      <h2 id="manual-title">Ručno plaćanje u Revolutu</h2>
+
+      <ul class="list">
+        <li>Dodaj primatelja preko IBAN-a.</li>
+        <li>Provjeri naziv primatelja prije potvrde plaćanja.</li>
+        <li>Upiši iznos iz očitanih podataka.</li>
+        <li>U referencu zalijepi model i poziv ili SEPA tekst ako treba.</li>
+        <li>Ako QR nije prihvaćen, oslonac ti je ručni unos iz polja iznad.</li>
+      </ul>
     </section>
   </main>
 
-  <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://unpkg.com/qrcode@1.5.4/build/qrcode.min.js"></script>
-  <script src="./app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
