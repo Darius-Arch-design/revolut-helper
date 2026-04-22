@@ -4,48 +4,7 @@ const HUB3_HEADER_RE = /^HRVHUB3\d$/i;
 const EPC_MAX_BYTES = 331;
 const MAX_PDF_PAGES_TO_SCAN = 5;
 
-if (!window.ZXing) {
-  throw new Error("ZXing nije učitan. Provjeri script src u index.html.");
-}
-
-if (!ZXing.BrowserMultiFormatReader) {
-  throw new Error("BrowserMultiFormatReader nije dostupan u učitanoj ZXing verziji.");
-}
-
-if (window.pdfjsLib) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc =
-    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-}
-
-let codeReader = createCodeReader(DEFAULT_CAMERA_CHARSET);
-
-const els = {
-  fileInput: document.getElementById("fileInput"),
-  video: document.getElementById("video"),
-  qrContainer: document.getElementById("qrContainer"),
-  statusBox: document.getElementById("statusBox"),
-
-  currencyField: document.getElementById("currencyField"),
-  purposeField: document.getElementById("purposeField"),
-
-  payerField: document.getElementById("payerField"),
-  recipientField: document.getElementById("recipientField"),
-  ibanField: document.getElementById("ibanField"),
-  refField: document.getElementById("refField"),
-  amountField: document.getElementById("amountField"),
-  descField: document.getElementById("descField"),
-
-  startCameraBtn: document.getElementById("startCameraBtn"),
-  stopCameraBtn: document.getElementById("stopCameraBtn"),
-  rescanBtn: document.getElementById("rescanBtn"),
-
-  copyIbanBtn: document.getElementById("copyIbanBtn"),
-  copyRefBtn: document.getElementById("copyRefBtn"),
-  shareQrBtn: document.getElementById("shareQrBtn"),
-  saveQrBtn: document.getElementById("saveQrBtn"),
-  openRevolutBtn: document.getElementById("openRevolutBtn")
-};
-
+const els = {};
 const state = {
   rawText: "",
   rawTextOriginal: "",
@@ -53,31 +12,65 @@ const state = {
   scanning: false,
   locked: false,
   mediaStream: null,
+  codeReader: null,
   payment: emptyPayment(),
   validation: emptyValidation()
 };
 
-init();
+window.addEventListener("DOMContentLoaded", init);
 
 function init() {
+  cacheElements();
   bindEvents();
   resetParsedData();
-  exposeLegacyFunctions();
-}
 
-function createCodeReader(charset) {
-  const hints = new Map();
-  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-    ZXing.BarcodeFormat.QR_CODE,
-    ZXing.BarcodeFormat.PDF_417
-  ]);
-  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-
-  if (charset) {
-    hints.set(ZXing.DecodeHintType.CHARACTER_SET, charset);
+  if (!window.ZXing || !ZXing.BrowserMultiFormatReader) {
+    setStatus("ZXing biblioteka nije učitana. Provjeri script tag u index.html.", "err");
+    return;
   }
 
-  return new ZXing.BrowserMultiFormatReader(hints, 300);
+  if (!window.QRCode) {
+    setStatus("QRCode biblioteka nije učitana. Provjeri script tag u index.html.", "err");
+    return;
+  }
+
+  if (!window.pdfjsLib) {
+    console.warn("PDF.js nije učitan. PDF upload neće raditi.");
+  } else {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  }
+
+  state.codeReader = createCodeReader(DEFAULT_CAMERA_CHARSET);
+  exposeLegacyFunctions();
+  setStatus("Aplikacija je spremna. Učitaj sliku, PDF ili otvori kameru.", "ok");
+}
+
+function cacheElements() {
+  els.fileInput = document.getElementById("fileInput");
+  els.video = document.getElementById("video");
+  els.qrContainer = document.getElementById("qrContainer");
+  els.statusBox = document.getElementById("statusBox");
+
+  els.currencyField = document.getElementById("currencyField");
+  els.purposeField = document.getElementById("purposeField");
+
+  els.payerField = document.getElementById("payerField");
+  els.recipientField = document.getElementById("recipientField");
+  els.ibanField = document.getElementById("ibanField");
+  els.refField = document.getElementById("refField");
+  els.amountField = document.getElementById("amountField");
+  els.descField = document.getElementById("descField");
+
+  els.startCameraBtn = document.getElementById("startCameraBtn");
+  els.stopCameraBtn = document.getElementById("stopCameraBtn");
+  els.rescanBtn = document.getElementById("rescanBtn");
+
+  els.copyIbanBtn = document.getElementById("copyIbanBtn");
+  els.copyRefBtn = document.getElementById("copyRefBtn");
+  els.shareQrBtn = document.getElementById("shareQrBtn");
+  els.saveQrBtn = document.getElementById("saveQrBtn");
+  els.openRevolutBtn = document.getElementById("openRevolutBtn");
 }
 
 function bindEvents() {
@@ -99,6 +92,21 @@ function exposeLegacyFunctions() {
   window.copyIBAN = copyIBAN;
   window.copyRef = copyRef;
   window.openRevolut = openRevolut;
+}
+
+function createCodeReader(charset) {
+  const hints = new Map();
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+    ZXing.BarcodeFormat.QR_CODE,
+    ZXing.BarcodeFormat.PDF_417
+  ]);
+  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+
+  if (charset) {
+    hints.set(ZXing.DecodeHintType.CHARACTER_SET, charset);
+  }
+
+  return new ZXing.BrowserMultiFormatReader(hints, 500);
 }
 
 function emptyPayment() {
@@ -147,24 +155,22 @@ async function onFileSelected(e) {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
 
+  stopCamera();
   resetParsedData();
 
   try {
     if (isPdfFile(file)) {
-      setStatus("Čitam PDF i pokušavam očitati barkod...", "warn");
+      setStatus("Čitam PDF i tražim barkod...", "warn");
       const decoded = await decodePdfFile(file);
       processDecodedText(decoded.text, "pdf");
     } else {
-      setStatus("Čitam sliku iz uređaja...", "warn");
+      setStatus("Čitam sliku i tražim barkod...", "warn");
       const decoded = await decodeImageFileRobust(file);
       processDecodedText(decoded.text, "slika");
     }
   } catch (err) {
     console.error("UPLOAD/DECODE ERROR:", err);
-    setStatus(
-      "Greška: " + (err && err.message ? err.message : String(err)),
-      "err"
-    );
+    setStatus("Ne mogu očitati QR/PDF417 iz odabrane datoteke.", "err");
   }
 }
 
@@ -185,22 +191,20 @@ async function decodePdfFile(file) {
 
   for (let pageNumber = 1; pageNumber <= pagesToTry; pageNumber++) {
     setStatus("Čitam PDF stranicu " + pageNumber + " od " + pagesToTry + "...", "warn");
-    const img = await renderPdfPageToImage(pdf, pageNumber);
+    const canvas = await renderPdfPageToCanvas(pdf, pageNumber);
 
-    try {
-      const decoded = await decodeImageWithFallback(img);
+    const decoded = await decodeCanvasWithVariants(canvas, "PDF stranica " + pageNumber);
+    if (decoded && decoded.text) {
       return decoded;
-    } catch (err) {
-      console.warn("PDF page decode failed:", pageNumber, err);
     }
   }
 
-  throw new Error("Barkod nije pronađen ni na jednoj podržanoj PDF stranici.");
+  throw new Error("Barkod nije pronađen u PDF-u.");
 }
 
-async function renderPdfPageToImage(pdf, pageNumber) {
+async function renderPdfPageToCanvas(pdf, pageNumber) {
   const page = await pdf.getPage(pageNumber);
-  const scale = 2.2;
+  const scale = 2.4;
   const viewport = page.getViewport({ scale });
   const outputScale = window.devicePixelRatio || 1;
 
@@ -218,7 +222,56 @@ async function renderPdfPageToImage(pdf, pageNumber) {
     transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null
   }).promise;
 
-  return loadImageFromCanvas(canvas);
+  return canvas;
+}
+
+async function decodeImageFileRobust(file) {
+  const img = await loadImageFromFile(file);
+
+  try {
+    setStatus("Pokušavam očitati originalnu sliku...", "warn");
+    const direct = await decodeImageWithFallback(img);
+    if (direct && direct.text) return direct;
+  } catch (err) {
+    console.warn("Direct image decode failed:", err);
+  }
+
+  const sourceCanvas = imageToCanvas(img);
+  const decoded = await decodeCanvasWithVariants(sourceCanvas, "slika");
+
+  if (decoded && decoded.text) {
+    return decoded;
+  }
+
+  throw new Error("Kod nije očitan iz slike.");
+}
+
+async function decodeCanvasWithVariants(sourceCanvas, label) {
+  const variants = buildImageVariants(sourceCanvas);
+
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (let i = 0; i < variants.length; i++) {
+    setStatus("Analiziram " + label + "... pokušaj " + (i + 1) + " / " + variants.length, "warn");
+
+    try {
+      const decoded = await decodeCanvasWithCharsetFallback(variants[i]);
+      if (decoded && decoded.text) {
+        const normalized = normalizeRawText(decoded.text);
+        const score = scoreDecodedCandidate(normalized);
+
+        if (score > bestScore) {
+          best = decoded;
+          bestScore = score;
+        }
+      }
+    } catch (err) {
+      console.warn("Variant decode failed:", err);
+    }
+  }
+
+  return best;
 }
 
 async function decodeImageWithFallback(img) {
@@ -230,8 +283,9 @@ async function decodeImageWithFallback(img) {
 
     try {
       const result = await reader.decodeFromImageElement(img);
-      if (result && result.text) {
-        const text = extractResultText(result);
+      const text = extractResultText(result);
+
+      if (text) {
         const normalized = normalizeRawText(text);
         const score = scoreDecodedCandidate(normalized);
 
@@ -241,7 +295,7 @@ async function decodeImageWithFallback(img) {
         }
       }
     } catch (err) {
-      console.warn("ZXing decode failed for charset:", charset, err);
+      console.warn("Image decode failed for charset:", charset, err);
     } finally {
       try { reader.reset(); } catch (_) {}
     }
@@ -254,243 +308,25 @@ async function decodeImageWithFallback(img) {
   return best;
 }
 
-async function decodeImageFileRobust(file) {
-  const originalImg = await loadImageFromFile(file);
-
-  try {
-    setStatus("Pokušavam očitati originalnu sliku...", "warn");
-    const directDecoded = await decodeImageWithFallback(originalImg);
-    if (directDecoded && directDecoded.text) {
-      return directDecoded;
-    }
-  } catch (err) {
-    console.warn("Original image decode failed:", err);
-  }
-
-  const source = await loadBitmapFromFile(file);
-  const variants = buildImageVariants(source);
-
-  let best = null;
-  let bestScore = -Infinity;
-
-  for (let i = 0; i < variants.length; i++) {
-    setStatus("Analiziram sliku iz uređaja... pokušaj " + (i + 1) + " / " + variants.length, "warn");
-    const decoded = await decodeCanvasWithCharsetFallback(variants[i]);
-
-    if (decoded && decoded.text) {
-      const normalized = normalizeRawText(decoded.text);
-      const score = scoreDecodedCandidate(normalized);
-
-      if (score > bestScore) {
-        best = decoded;
-        bestScore = score;
-      }
-    }
-  }
-
-  if (!best) {
-    throw new Error("Kod nije očitan iz slike.");
-  }
-
-  return best;
-}
-
-async function loadBitmapFromFile(file) {
-  if (window.createImageBitmap) {
-    try {
-      return await createImageBitmap(file, { imageOrientation: "from-image" });
-    } catch (_) {}
-  }
-
-  const img = await loadImageFromFile(file);
-  const fallbackCanvas = document.createElement("canvas");
-  const w = img.naturalWidth || img.width;
-  const h = img.naturalHeight || img.height;
-  fallbackCanvas.width = w;
-  fallbackCanvas.height = h;
-  const ctx = fallbackCanvas.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(img, 0, 0, w, h);
-  return fallbackCanvas;
-}
-
-function buildImageVariants(source) {
-  const variants = [];
-
-  const normal = drawSourceToCanvas(source, {
-    maxSide: 2600,
-    grayscale: false,
-    threshold: false,
-    contrastBoost: 1
-  });
-  variants.push(normal);
-
-  const grayscale = drawSourceToCanvas(source, {
-    maxSide: 2600,
-    grayscale: true,
-    threshold: false,
-    contrastBoost: 1.15
-  });
-  variants.push(grayscale);
-
-  const thresholded = drawSourceToCanvas(source, {
-    maxSide: 2600,
-    grayscale: true,
-    threshold: true,
-    contrastBoost: 1.2
-  });
-  variants.push(thresholded);
-
-  variants.push(rotateCanvas(normal, 90));
-  variants.push(rotateCanvas(normal, 180));
-  variants.push(rotateCanvas(normal, 270));
-
-  variants.push(rotateCanvas(grayscale, 90));
-  variants.push(rotateCanvas(grayscale, 180));
-  variants.push(rotateCanvas(grayscale, 270));
-
-  return variants;
-}
-
-function drawSourceToCanvas(source, options) {
-  const opts = options || {};
-  const srcW = source.width || source.naturalWidth;
-  const srcH = source.height || source.naturalHeight;
-
-  const maxSide = opts.maxSide || 2600;
-  const scale = Math.min(1, maxSide / Math.max(srcW, srcH));
-
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(srcW * scale));
-  canvas.height = Math.max(1, Math.round(srcH * scale));
-
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
-
-  if (opts.grayscale || opts.threshold || opts.contrastBoost !== 1) {
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-    const contrastBoost = opts.contrastBoost || 1;
-
-    for (let i = 0; i < data.length; i += 4) {
-      let r = data[i];
-      let g = data[i + 1];
-      let b = data[i + 2];
-
-      if (contrastBoost !== 1) {
-        r = clampColor((((r / 255 - 0.5) * contrastBoost) + 0.5) * 255);
-        g = clampColor((((g / 255 - 0.5) * contrastBoost) + 0.5) * 255);
-        b = clampColor((((b / 255 - 0.5) * contrastBoost) + 0.5) * 255);
-      }
-
-      if (opts.grayscale || opts.threshold) {
-        const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-        r = gray;
-        g = gray;
-        b = gray;
-      }
-
-      if (opts.threshold) {
-        const bw = r > 160 ? 255 : 0;
-        r = bw;
-        g = bw;
-        b = bw;
-      }
-
-      data[i] = r;
-      data[i + 1] = g;
-      data[i + 2] = b;
-    }
-
-    ctx.putImageData(imageData, 0, 0);
-  }
-
-  return canvas;
-}
-
-function rotateCanvas(sourceCanvas, degrees) {
-  const radians = degrees * Math.PI / 180;
-  const swapSides = degrees === 90 || degrees === 270;
-
-  const canvas = document.createElement("canvas");
-  canvas.width = swapSides ? sourceCanvas.height : sourceCanvas.width;
-  canvas.height = swapSides ? sourceCanvas.width : sourceCanvas.height;
-
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  ctx.translate(canvas.width / 2, canvas.height / 2);
-  ctx.rotate(radians);
-  ctx.drawImage(sourceCanvas, -sourceCanvas.width / 2, -sourceCanvas.height / 2);
-
-  return canvas;
-}
-
 async function decodeCanvasWithCharsetFallback(canvas) {
-  let best = null;
-  let bestScore = -Infinity;
-
   const blob = await canvasToBlob(canvas, "image/png");
   const objectUrl = URL.createObjectURL(blob);
 
   try {
     const img = await loadImageFromUrl(objectUrl);
-
-    for (const charset of CHARSET_CANDIDATES) {
-      const reader = createCodeReader(charset);
-
-      try {
-        const result = await reader.decodeFromImageElement(img);
-
-        if (result && result.text) {
-          const text = extractResultText(result);
-          const normalized = normalizeRawText(text);
-          const score = scoreDecodedCandidate(normalized);
-
-          if (score > bestScore) {
-            best = { text, charset };
-            bestScore = score;
-          }
-        }
-      } catch (err) {
-        console.warn("ZXing decode failed for charset:", charset, err);
-      } finally {
-        try { reader.reset(); } catch (_) {}
-      }
-    }
+    return await decodeImageWithFallback(img);
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
-
-  return best;
-}
-
-function extractResultText(result) {
-  if (!result) return "";
-  if (typeof result.text === "string") return result.text;
-  if (typeof result.getText === "function") return result.getText();
-  return String(result);
-}
-
-function clampColor(v) {
-  return Math.max(0, Math.min(255, Math.round(v)));
-}
-
-function scoreDecodedCandidate(text) {
-  const v = text || "";
-  let score = 0;
-
-  const letters = v.match(/[A-Za-zČĆĐŠŽčćđšž]/g);
-  if (letters) score += letters.length * 1.2;
-
-  const croatianLetters = v.match(/[čČćĆšŠžŽđĐ]/g);
-  if (croatianLetters) score += croatianLetters.length * 4;
-
-  const mojibake = v.match(/(Ã.|Ä.|Å.|�)/g);
-  if (mojibake) score -= mojibake.length * 8;
-
-  return score;
 }
 
 async function startCamera() {
   if (state.scanning) return;
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setStatus("Kamera nije podržana u ovom pregledniku.", "err");
+    return;
+  }
 
   resetParsedData();
   setStatus("Pokrećem kameru...", "warn");
@@ -498,7 +334,7 @@ async function startCamera() {
   try {
     state.locked = false;
     state.scanning = true;
-    codeReader = createCodeReader(DEFAULT_CAMERA_CHARSET);
+    state.codeReader = createCodeReader(DEFAULT_CAMERA_CHARSET);
 
     if (els.startCameraBtn) els.startCameraBtn.disabled = true;
     if (els.stopCameraBtn) els.stopCameraBtn.disabled = false;
@@ -516,14 +352,12 @@ async function startCamera() {
 
     if (els.video) {
       els.video.srcObject = stream;
-      try {
-        await els.video.play();
-      } catch (_) {}
+      await els.video.play().catch(() => {});
     }
 
     setStatus("Kamera je aktivna. Usmjeri barkod prema kameri.", "warn");
 
-    await codeReader.decodeFromVideoDevice(null, "video", function (result, err) {
+    state.codeReader.decodeFromVideoDevice(null, "video", (result, err) => {
       if (state.locked) return;
 
       if (result) {
@@ -532,15 +366,20 @@ async function startCamera() {
           state.locked = true;
           processDecodedText(text, "kamera");
           stopCamera();
+          return;
         }
       }
 
       if (err && err.name && err.name !== "NotFoundException") {
         console.warn("Camera decode warning:", err);
       }
+    }).catch((err) => {
+      console.error("Camera decode start failed:", err);
+      setStatus("Kamera je pokrenuta, ali čitanje barkoda nije uspjelo.", "err");
+      stopCamera();
     });
   } catch (err) {
-    console.error(err);
+    console.error("Camera start failed:", err);
     state.scanning = false;
     if (els.startCameraBtn) els.startCameraBtn.disabled = false;
     if (els.stopCameraBtn) els.stopCameraBtn.disabled = true;
@@ -550,7 +389,7 @@ async function startCamera() {
 
 function stopCamera() {
   try {
-    if (codeReader) codeReader.reset();
+    if (state.codeReader) state.codeReader.reset();
   } catch (_) {}
 
   if (state.mediaStream) {
@@ -576,7 +415,15 @@ function processDecodedText(text, source) {
   const normalizedText = normalizeRawText(text);
   const scanHash = normalizedText.replace(/\s+/g, " ").trim();
 
-  if (!scanHash || scanHash === state.lastScanHash) return;
+  if (!scanHash) {
+    setStatus("Barkod je očitan, ali je sadržaj prazan.", "err");
+    return;
+  }
+
+  if (scanHash === state.lastScanHash) {
+    setStatus("Isti barkod je već očitan.", "warn");
+    return;
+  }
 
   state.lastScanHash = scanHash;
   state.rawText = normalizedText;
@@ -594,13 +441,16 @@ function processDecodedText(text, source) {
     state.payment.sepaEncodingUsed = epc.encoding;
     state.payment.sepaCharsetLabel = epc.charsetLabel;
     window.sepaText = state.payment.sepaText;
+
     renderQr(state.payment.sepaText);
-    setStatus("Skeniranje uspješno (" + source + "). EPC QR generiran.", "ok");
+    setStatus("Skeniranje uspješno (" + source + "). EPC QR je generiran.", "ok");
   } else {
     state.payment.sepaText = "";
     window.sepaText = "";
     clearQr("Nedostaju obvezni podaci za EPC QR.");
-    setStatus("Skeniranje uspješno (" + source + "), ali podaci nisu dovoljno valjani za EPC QR.", "warn");
+
+    const firstError = validation.errors[0] || "Podaci nisu dovoljno valjani za EPC QR.";
+    setStatus("Skeniranje uspješno (" + source + "), ali: " + firstError, "warn");
   }
 
   renderParsedData();
@@ -1383,7 +1233,7 @@ function resetAll() {
   state.lastScanHash = "";
   resetParsedData();
   if (els.fileInput) els.fileInput.value = "";
-  setStatus("Čekam skeniranje...");
+  setStatus("Čekam skeniranje...", "warn");
 }
 
 /* ---------------- ACTIONS ---------------- */
@@ -1508,7 +1358,159 @@ function openRevolut() {
   window.location.href = "revolut://";
 }
 
-/* ---------------- UTILS ---------------- */
+/* ---------------- IMAGE / CANVAS UTILS ---------------- */
+
+function imageToCanvas(img) {
+  const canvas = document.createElement("canvas");
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+
+  canvas.width = w;
+  canvas.height = h;
+
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, w, h);
+
+  return canvas;
+}
+
+function buildImageVariants(sourceCanvas) {
+  const variants = [];
+
+  const normal = drawSourceToCanvas(sourceCanvas, {
+    maxSide: 2600,
+    grayscale: false,
+    threshold: false,
+    contrastBoost: 1
+  });
+  variants.push(normal);
+
+  const grayscale = drawSourceToCanvas(sourceCanvas, {
+    maxSide: 2600,
+    grayscale: true,
+    threshold: false,
+    contrastBoost: 1.1
+  });
+  variants.push(grayscale);
+
+  const thresholded = drawSourceToCanvas(sourceCanvas, {
+    maxSide: 2600,
+    grayscale: true,
+    threshold: true,
+    contrastBoost: 1.2
+  });
+  variants.push(thresholded);
+
+  variants.push(rotateCanvas(normal, 90));
+  variants.push(rotateCanvas(normal, 180));
+  variants.push(rotateCanvas(normal, 270));
+
+  return variants;
+}
+
+function drawSourceToCanvas(source, options) {
+  const opts = options || {};
+  const srcW = source.width || source.naturalWidth;
+  const srcH = source.height || source.naturalHeight;
+
+  const maxSide = opts.maxSide || 2600;
+  const scale = Math.min(1, maxSide / Math.max(srcW, srcH));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(srcW * scale));
+  canvas.height = Math.max(1, Math.round(srcH * scale));
+
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+
+  if (opts.grayscale || opts.threshold || opts.contrastBoost !== 1) {
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    const contrastBoost = opts.contrastBoost || 1;
+
+    for (let i = 0; i < data.length; i += 4) {
+      let r = data[i];
+      let g = data[i + 1];
+      let b = data[i + 2];
+
+      if (contrastBoost !== 1) {
+        r = clampColor((((r / 255 - 0.5) * contrastBoost) + 0.5) * 255);
+        g = clampColor((((g / 255 - 0.5) * contrastBoost) + 0.5) * 255);
+        b = clampColor((((b / 255 - 0.5) * contrastBoost) + 0.5) * 255);
+      }
+
+      if (opts.grayscale || opts.threshold) {
+        const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+        r = gray;
+        g = gray;
+        b = gray;
+      }
+
+      if (opts.threshold) {
+        const bw = r > 160 ? 255 : 0;
+        r = bw;
+        g = bw;
+        b = bw;
+      }
+
+      data[i] = r;
+      data[i + 1] = g;
+      data[i + 2] = b;
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+  }
+
+  return canvas;
+}
+
+function rotateCanvas(sourceCanvas, degrees) {
+  const radians = degrees * Math.PI / 180;
+  const swapSides = degrees === 90 || degrees === 270;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = swapSides ? sourceCanvas.height : sourceCanvas.width;
+  canvas.height = swapSides ? sourceCanvas.width : sourceCanvas.height;
+
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate(radians);
+  ctx.drawImage(sourceCanvas, -sourceCanvas.width / 2, -sourceCanvas.height / 2);
+
+  return canvas;
+}
+
+function clampColor(v) {
+  return Math.max(0, Math.min(255, Math.round(v)));
+}
+
+function extractResultText(result) {
+  if (!result) return "";
+  if (typeof result.text === "string") return result.text;
+  if (typeof result.getText === "function") return result.getText();
+  return String(result || "");
+}
+
+function scoreDecodedCandidate(text) {
+  const v = text || "";
+  let score = 0;
+
+  const letters = v.match(/[A-Za-zČĆĐŠŽčćđšž]/g);
+  if (letters) score += letters.length * 1.2;
+
+  const croatianLetters = v.match(/[čČćĆšŠžŽđĐ]/g);
+  if (croatianLetters) score += croatianLetters.length * 4;
+
+  const mojibake = v.match(/(Ã.|Ä.|Å.|�)/g);
+  if (mojibake) score -= mojibake.length * 8;
+
+  if (/HRVHUB3/i.test(v)) score += 50;
+  if (/HR\d{19,30}/i.test(v.replace(/\s+/g, ""))) score += 30;
+
+  return score;
+}
+
+/* ---------------- GENERIC UTILS ---------------- */
 
 function escapeHtml(str) {
   return String(str)
@@ -1554,19 +1556,6 @@ function loadImageFromUrl(url) {
 
     img.src = url;
   });
-}
-
-async function loadImageFromCanvas(canvas) {
-  const blob = await canvasToBlob(canvas, "image/png");
-  const objectUrl = URL.createObjectURL(blob);
-
-  try {
-    return await loadImageFromUrl(objectUrl);
-  } finally {
-    setTimeout(function () {
-      URL.revokeObjectURL(objectUrl);
-    }, 1000);
-  }
 }
 
 function canvasToBlob(canvas, type, quality) {
