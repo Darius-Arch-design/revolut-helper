@@ -13,6 +13,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
   <script src="https://unpkg.com/@zxing/library@latest"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
   <style>
     :root {
@@ -321,8 +322,8 @@
     <section class="hero">
       <h1>SEPA Scan for Revolut</h1>
       <p>
-        Skeniraj hrvatsku HUB3 uplatnicu, provjeri očitane podatke i pripremi plaćanje
-        za brži unos u Revolutu.
+        Skeniraj hrvatsku HUB3 uplatnicu iz slike, PDF-a ili kamere, provjeri očitane podatke
+        i pripremi plaćanje za brži unos u Revolutu ili drugoj SEPA aplikaciji.
       </p>
     </section>
 
@@ -330,8 +331,8 @@
       <section class="card" aria-labelledby="ulaz-title">
         <h2 id="ulaz-title">Ulaz</h2>
 
-        <label for="fileInput" class="file-label">Odaberi sliku računa</label>
-        <input type="file" id="fileInput" accept="image/*" />
+        <label for="fileInput" class="file-label">Odaberi sliku ili PDF</label>
+        <input type="file" id="fileInput" accept="image/*,.pdf,application/pdf" />
 
         <div class="actions">
           <button id="startCameraBtn" class="primary" type="button">Pokreni kameru</button>
@@ -348,8 +349,8 @@
         </div>
 
         <p class="note">
-          Savjet: drži barkod ravno, bez odsjaja i dovoljno blizu kameri. Ako kamera ne očita,
-          probaj kroz upload slike ili izreži kadar bliže barkodu.
+          Savjet: drži barkod ravno, bez odsjaja i dovoljno blizu kameri. Kod PDF-a
+          aplikacija pokušava očitati prvih nekoliko stranica.
         </p>
       </section>
 
@@ -370,7 +371,7 @@
         </div>
 
         <p class="note">
-          Na iPhoneu prvo koristi gumb “Spremi u Galeriju / Podijeli QR”. Ako share ne radi,
+          Na iPhoneu prvo probaj “Spremi u Galeriju / Podijeli QR”. Ako to ne uspije,
           ostaje fallback “Download PNG”.
         </p>
       </section>
@@ -474,11 +475,6 @@
           <div id="headerField" class="field-value mono">—</div>
         </div>
       </div>
-
-      <p class="inline-note">
-        Ako ovdje vidiš smislen header poput <span class="mono">HRVHUB30</span> i
-        ispravno odvojena polja, parser radi kako treba.
-      </p>
     </section>
 
     <section class="card section-spacer" aria-labelledby="manual-title">
