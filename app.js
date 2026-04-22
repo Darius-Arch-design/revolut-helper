@@ -2,6 +2,12 @@ const CHARSET_CANDIDATES = ["ISO-8859-2", "windows-1250", "UTF-8"];
 const DEFAULT_CAMERA_CHARSET = "ISO-8859-2";
 const HUB3_HEADER_RE = /^HRVHUB3\d$/i;
 const EPC_MAX_BYTES = 331;
+const MAX_PDF_PAGES_TO_SCAN = 5;
+
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+}
 
 let codeReader = createCodeReader(DEFAULT_CAMERA_CHARSET);
 
@@ -146,43 +152,120 @@ async function onFileSelected(e) {
   if (!file) return;
 
   resetParsedData();
-  setStatus("Čitam sliku...", "warn");
 
   try {
-    const img = await loadImageFromFile(file);
-    const decoded = await decodeImageWithFallback(img);
-
-    if (!decoded || !decoded.text) {
-      throw new Error("Kod nije očitan.");
+    if (isPdfFile(file)) {
+      setStatus("Čitam PDF i pokušavam očitati barkod...", "warn");
+      const decoded = await decodePdfFile(file);
+      processDecodedText(decoded.text, "pdf");
+    } else {
+      setStatus("Čitam sliku...", "warn");
+      const img = await loadImageFromFile(file);
+      const decoded = await decodeImageWithFallback(img);
+      processDecodedText(decoded.text, "slika");
     }
-
-    processDecodedText(decoded.text, "slika");
   } catch (err) {
     console.error(err);
-    setStatus("Ne mogu očitati QR/PDF417 iz slike.", "err");
+    setStatus("Ne mogu očitati QR/PDF417 iz odabrane datoteke.", "err");
   }
 }
 
+function isPdfFile(file) {
+  if (!file) return false;
+  return file.type === "application/pdf" || /\.pdf$/i.test(file.name || "");
+}
+
+async function decodePdfFile(file) {
+  if (!window.pdfjsLib) {
+    throw new Error("PDF.js nije učitan.");
+  }
+
+  const arrayBuffer = await file.arrayBuffer();
+  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+  const pdf = await loadingTask.promise;
+  const pagesToTry = Math.min(pdf.numPages, MAX_PDF_PAGES_TO_SCAN);
+
+  for (let pageNumber = 1; pageNumber <= pagesToTry; pageNumber++) {
+    setStatus("Čitam PDF stranicu " + pageNumber + " od " + pagesToTry + "...", "warn");
+
+    const img = await renderPdfPageToImage(pdf, pageNumber);
+    try {
+      const decoded = await decodeImageWithFallback(img);
+      return decoded;
+    } catch (_) {}
+  }
+
+  throw new Error("Barkod nije pronađen ni na jednoj podržanoj PDF stranici.");
+}
+
+async function renderPdfPageToImage(pdf, pageNumber) {
+  const page = await pdf.getPage(pageNumber);
+  const scale = 2.2;
+  const viewport = page.getViewport({ scale: scale });
+  const outputScale = window.devicePixelRatio || 1;
+
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+  canvas.width = Math.floor(viewport.width * outputScale);
+  canvas.height = Math.floor(viewport.height * outputScale);
+  canvas.style.width = Math.floor(viewport.width) + "px";
+  canvas.style.height = Math.floor(viewport.height) + "px";
+
+  await page.render({
+    canvasContext: ctx,
+    viewport: viewport,
+    transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null
+  }).promise;
+
+  const dataUrl = canvas.toDataURL("image/png");
+  return loadImageFromDataUrl(dataUrl);
+}
+
 async function decodeImageWithFallback(img) {
-  let lastError = null;
+  let best = null;
+  let bestScore = -Infinity;
 
   for (const charset of CHARSET_CANDIDATES) {
     const reader = createCodeReader(charset);
-
     try {
       const result = await reader.decodeFromImageElement(img);
       if (result && result.text) {
-        try { reader.reset(); } catch (_) {}
-        return { text: result.text, charset: charset };
+        const normalized = normalizeRawText(result.text);
+        const score = scoreDecodedCandidate(normalized);
+
+        if (score > bestScore) {
+          best = { text: result.text, charset: charset };
+          bestScore = score;
+        }
       }
-    } catch (err) {
-      lastError = err;
+    } catch (_) {
     } finally {
       try { reader.reset(); } catch (_) {}
     }
   }
 
-  throw lastError || new Error("Kod nije očitan.");
+  if (!best) {
+    throw new Error("Kod nije očitan.");
+  }
+
+  return best;
+}
+
+function scoreDecodedCandidate(text) {
+  const v = text || "";
+  let score = 0;
+
+  const letters = v.match(/\p{L}/gu);
+  if (letters) score += letters.length * 1.2;
+
+  const croatianLetters = v.match(/[čČćĆšŠžŽđĐ]/g);
+  if (croatianLetters) score += croatianLetters.length * 4;
+
+  const mojibake = v.match(/(Ã.|Ä.|Å.|�)/g);
+  if (mojibake) score -= mojibake.length * 8;
+
+  return score;
 }
 
 async function startCamera() {
@@ -385,7 +468,6 @@ function parseFallback(text) {
   payment.purposeCode = findPurposeCode(lines);
   payment.payerName = findLikelyPayer(lines);
   payment.recipientName = findLikelyRecipient(lines, payment.iban);
-
   payment.description = findLikelyDescription(lines, payment);
 
   return payment;
@@ -420,28 +502,23 @@ function normalizeUnicodeDisplay(value) {
 
 function bestEffortCharsetRepair(value) {
   const base = value || "";
-  const tried = new Set([base]);
+  const candidates = [base];
 
-  [
-    decodeByteLikeString(base, "utf-8"),
-    decodeByteLikeString(base, "windows-1250"),
-    decodeByteLikeString(base, "iso-8859-2")
-  ].forEach(function (candidate) {
-    if (candidate) tried.add(candidate);
-  });
+  for (const enc of ["utf-8", "windows-1250", "iso-8859-2"]) {
+    candidates.push(decodeByteLikeString(base, enc));
+  }
 
   let best = base;
   let bestScore = scoreCroatianText(base);
 
-  tried.forEach(function (candidate) {
+  for (const candidate of candidates) {
     const repaired = repairMojibakeCroatian(candidate);
     const score = scoreCroatianText(repaired);
-
     if (score > bestScore) {
       best = repaired;
       bestScore = score;
     }
-  });
+  }
 
   return best;
 }
@@ -451,7 +528,6 @@ function decodeByteLikeString(value, encoding) {
     const bytes = new Uint8Array(Array.from(value || "", function (ch) {
       return ch.charCodeAt(0) & 0xff;
     }));
-
     return new TextDecoder(encoding, { fatal: false }).decode(bytes);
   } catch (_) {
     return value;
@@ -462,14 +538,120 @@ function scoreCroatianText(value) {
   const v = value || "";
   let score = 0;
 
-  const croMatches = v.match(/[čČćĆšŠžŽđĐ]/g);
-  if (croMatches) score += croMatches.length * 5;
+  const validLetters = v.match(/\p{L}/gu);
+  if (validLetters) score += validLetters.length * 1.2;
 
-  const cleanWords = v.match(/\b(?:Jagnić|Štrokinec|Obrtnička|Čakovec|Međimurje|plin)\b/gi);
-  if (cleanWords) score += cleanWords.length * 6;
+  const croatianLetters = v.match(/[čČćĆšŠžŽđĐ]/g);
+  if (croatianLetters) score += croatianLetters.length * 4;
 
-  const badMatches = v.match(/[ÃÄÅ�]/g);
-  if (badMatches) score -= badMatches.length * 5;
+  const mojibake = v.match(/(Ã.|Ä.|Å.|�)/g);
+  if (mojibake) score -= mojibake.length * 8;
 
-  if (v.indexOf("Ä") !== -1) score -= 8;
- 
+  const words = v.match(/\p{L}+/gu);
+  if (words) score += words.length * 0.5;
+
+  return score;
+}
+
+function repairMojibakeCroatian(value) {
+  let v = value || "";
+
+  const replacements = [
+    ["Ä", "č"],
+    ["Ä", "Č"],
+    ["Äć", "ć"],
+    ["Ä‡", "ć"],
+    ["Ä", "ć"],
+    ["Ä†", "Ć"],
+    ["Ä", "Ć"],
+    ["Å¡", "š"],
+    ["Å ", "Š"],
+    ["ÅŠ", "Š"],
+    ["Å¾", "ž"],
+    ["Å½", "Ž"],
+    ["Ä‘", "đ"],
+    ["Ä", "Đ"],
+    ["Ð", "Đ"],
+    ["ð", "đ"],
+    ["Ã„Â", "č"],
+    ["Ã„Â", "Č"],
+    ["Ã„Â‡", "ć"],
+    ["Ã„Â", "ć"],
+    ["Ã„Â†", "Ć"],
+    ["Ã„Â", "Ć"],
+    ["Ã…Â¡", "š"],
+    ["Ã…Â ", "Š"],
+    ["Ã…Â¾", "ž"],
+    ["Ã…Â½", "Ž"],
+    ["Ã„Â‘", "đ"],
+    ["Ã„Â", "Đ"]
+  ];
+
+  for (const pair of replacements) {
+    v = v.split(pair[0]).join(pair[1]);
+  }
+
+  return v;
+}
+
+function cleanDisplayField(value, maxLen) {
+  const len = typeof maxLen === "number" ? maxLen : 140;
+  return normalizeUnicodeDisplay(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .substring(0, len);
+}
+
+function normalizeCurrency(value) {
+  const v = cleanDisplayField(value, 3).toUpperCase();
+  return v || "EUR";
+}
+
+function parseHubAmount(value) {
+  const digits = (value || "").replace(/[^\d]/g, "");
+  if (!digits) return "";
+
+  const cents = Number(digits);
+  if (!Number.isFinite(cents) || cents < 0) return "";
+
+  return (cents / 100).toFixed(2);
+}
+
+function normalizeModel(value) {
+  const raw = cleanDisplayField(value, 10).replace(/\s+/g, "").toUpperCase();
+  if (!raw) return "";
+  if (/^HR\d{2}$/.test(raw)) return raw;
+  if (/^\d{2}$/.test(raw)) return "HR" + raw;
+  return raw;
+}
+
+function normalizeReference(value) {
+  return cleanDisplayField(value, 80).replace(/\s+/g, "");
+}
+
+function normalizePurposeCode(value) {
+  const v = cleanDisplayField(value, 10).replace(/\s+/g, "").toUpperCase();
+  return /^[A-Z0-9]{4}$/.test(v) ? v : "";
+}
+
+function buildCombinedReference(model, referenceNumber) {
+  if (model && referenceNumber) return model + " " + referenceNumber;
+  return referenceNumber || model || "";
+}
+
+/* ---------------- VALIDATION ---------------- */
+
+function validatePayment(payment) {
+  const errors = [];
+  const warnings = [];
+
+  if (!payment.iban && payment.accountRaw) {
+    errors.push("Polje računa je pronađeno, ali ne sadrži valjan IBAN.");
+  }
+
+  if (!payment.iban && !payment.accountRaw) {
+    errors.push("IBAN primatelja nije pronađen.");
+  }
+
+  if (payment.iban && !validateIBAN(payment.iban)) {
+    errors.push("IBAN je pronađen, ali nije valjan.");
