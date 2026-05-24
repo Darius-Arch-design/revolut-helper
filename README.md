@@ -1,46 +1,20 @@
 # SEPA Scan for Revolut
-Web aplikacija koja skenira hrvatske HUB3 (PDF417) barkodove s računa i uplatnica te ih pretvara u EPC/SEPA QR kod pogodan za plaćanje u Revolutu.
-**Demo:** https://darius-arch-design.github.io/revolut-helper/
-## Svrha
-Aplikacija omogućuje brzo i točno plaćanje hrvatskih računa (režije, telekom, komunalije itd.) skeniranjem 2D barkoda s uplatnice. Umjesto ručnog prepisivanja podataka, korisnik skenira barkod i dobiva spreman EPC QR kod koji Revolut prepoznaje.
-## Glavne značajke
-- Skeniranje HUB3 barkoda iz **slike**, **PDF-a** ili **kamere**
-- Podrška za više encodinga (ISO-8859-2, Windows-1250, UTF-8)
-- Automatsko ispravljanje hrvatskih znakova (mojibake)
-- Generiranje EPC/SEPA QR koda prema standardu
-- Prikaz metapodataka skeniranja (koji parser i charset je korišten)
-- Kopiranje IBAN-a, modela i poziva na broj
-- Jednostavan i čist korisnički sučelje
-## Kako koristiti
-1. Otvori aplikaciju u pregledniku (najbolje na mobitelu).
-2. Odaberi jednu od metoda:
-   - **Kamera** – usmjeri kameru prema barkodu
-   - **Slika** – odaberi sliku s uređaja
-   - **PDF** – odaberi PDF računa (do 5 stranica)
-3. Provjeri očitane podatke.
-4. Skeniraj generirani EPC QR kod u Revolutu ili kopiraj podatke ručno.
-## Podržani formati
-- HUB3 (HRVHUB30 / HRVHUB31)
-- PDF417 barkodovi s hrvatskih uplatnica
-## Tehnički detalji
-- Koristi **ZXing** za dekodiranje barkodova
-- Koristi **PDF.js** za obradu PDF datoteka
-- Generira EPC QR prema specifikaciji (BCD 002)
-- Automatski bira najbolji charset prilikom dekodiranja
-- Prikazuje informaciju o korištenom parseru (`HUB3` ili `fallback`) i charsetu
-## Ograničenja
-- Ne podržava starije formate prije HUB3
-- Fallback parser može imati nižu točnost kod jako oštećenih ili nečitkih barkodova
-- Maksimalna duljina EPC QR-a je ograničena na 331 bajt
-## Lokalno pokretanje
-1. Preuzmi oba fajla (`index.html` i `app.js`)
-2. Smjesti ih u isti direktorij
-3. Otvori `index.html` u pregledniku
-> Napomena: Za korištenje kamere potrebno je poslužiti aplikaciju preko HTTPS-a (ili `localhost`).
-## Tehnologije
-- Vanilla JavaScript
-- ZXing Library
-- QRCode.js
-- PDF.js
-## Licenca
-Ovaj projekt je namijenjen osobnoj upotrebi. Nije službena integracija s Revolutom.
+
+SEPA Scan for Revolut je mala web aplikacija koja skenira hrvatske HUB3 2D barkodove s računa i uplatnica, izdvaja podatke za plaćanje i pretvara ih u QR kod za automatsko plaćanje u Revolutu.
+
+https://darius-arch-design.github.io/revolut-helper/
+
+Aplikacija podržava skeniranje barkoda iz slike, PDF-a i kamere. Nakon očitavanja prikazuje ključne podatke za provjeru i generira EPC SEPA QR sadržaj koji Revolut ispravno prepoznaje.
+
+Projekt je namijenjen računima hrvatskih tvrtki i usluga poput režija, telekoma i komunalnih računa, gdje korisnik želi izbjeći ručni unos podataka i ubrzati plaćanje. Umjesto prepisivanja podataka s papirnate HUB3 uplatnice, aplikacija očita barkod, izdvoji IBAN, naziv primatelja, iznos, model i poziv na broj te pripremi QR kod i podatke za brzo plaćanje.
+
+Aplikacija nije službena integracija s Revolutom, ali služi kao pouzdan payment helper koji hrvatsku HUB3 uplatnicu pretvara u digitalni oblik prikladan za brzo i praktično plaćanje. Uz generiranje QR koda, aplikacija omogućuje i ručno kopiranje ključnih podataka kad korisnik želi dodatnu provjeru ili alternativni način unosa.
+
+## Glavne mogućnosti
+
+- skeniranje PDF417 / HUB3 barkoda sa slike, PDF-a ili kamere
+- izdvajanje IBAN-a, primatelja, iznosa, modela i poziva na broj
+- osnovna validacija očitanih podataka prije generiranja QR koda
+- generiranje EPC SEPA QR sadržaja i prikaz QR koda
+- spremanje ili dijeljenje generiranog QR koda
+- brže plaćanje računa u Revolutu
