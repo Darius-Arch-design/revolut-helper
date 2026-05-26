@@ -36,12 +36,6 @@ Umjesto ručnog prepisivanja IBAN-a, modela, poziva na broj i iznosa – jednost
 
 ---
 
-##  Primjeri
-
-U folderu `examples/` (ako dodate) ili na demo stranici možete vidjeti primjere uspješnog skeniranja HUB3 barkodova.
-
----
-
 ##  Tehnički detalji
 
 - **Barcode dekodiranje:** ZXing (s više charsetova + custom image processing)
