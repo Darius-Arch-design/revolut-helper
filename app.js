@@ -215,14 +215,14 @@ async function decodePdfFile(file) {
   const arrayBuffer = await file.arrayBuffer();
   const loadingTask = pdfjsLib.getDocument({
     data: arrayBuffer,
-    disableWorker: isIOS()   // KLJUČNO za iPhone
+    disableWorker: isIOS()
   });
   let pdf;
   try {
     pdf = await loadingTask.promise;
   } catch (err) {
-    console.error("PDF.js getDocument failed on iOS:", err);
-    throw new Error("Ne mogu učitati PDF (problem s PDF.js na iPhoneu).");
+    console.error("PDF.js getDocument failed:", err);
+    throw new Error("Ne mogu učitati PDF datoteku.");
   }
   const pagesToTry = Math.min(pdf.numPages, MAX_PDF_PAGES_TO_SCAN);
   let lastError = null;
@@ -234,18 +234,19 @@ async function decodePdfFile(file) {
       return decoded;
     } catch (err) {
       lastError = err;
-      console.warn("PDF stranica " + pageNumber + " nije uspjela:", err);
+      console.error("Greška na PDF stranici " + pageNumber + ":", err);
+      setStatus("Greška na stranici " + pageNumber + " – pokušavam sljedeću...", "warn");
     }
   }
   throw new Error(
     "Barkod nije pronađen ni na jednoj PDF stranici. " +
-    (lastError ? lastError.message : "")
+    (lastError ? "Posljednja greška: " + lastError.message : "")
   );
 }
 
 async function renderPdfPageToImage(pdf, pageNumber) {
   const page = await pdf.getPage(pageNumber);
-  const baseScale = isIOS() ? 1.6 : 2.2;
+  const baseScale = isIOS() ? 1.2 : 2.0;           // ← promijenjeno sa 1.6 → 1.2
   const viewport = page.getViewport({ scale: baseScale });
   const outputScale = isIOS() ? 1 : (window.devicePixelRatio || 1);
   const canvas = document.createElement("canvas");
@@ -266,31 +267,29 @@ async function renderPdfPageToImage(pdf, pageNumber) {
 async function decodeImageWithFallback(img) {
   let best = null;
   let bestScore = -Infinity;
-
   for (const charset of CHARSET_CANDIDATES) {
     const reader = createCodeReader(charset);
-
     try {
+      console.log("Pokušavam dekodiranje sa charsetom:", charset);
       const result = await reader.decodeFromImageElement(img);
       if (result && result.text) {
         const normalized = normalizeRawText(result.text);
         const score = scoreDecodedCandidate(normalized);
-
+        console.log("Uspješno dekodirano sa", charset, "score:", score);
         if (score > bestScore) {
           best = { text: result.text, charset };
           bestScore = score;
         }
       }
-    } catch (_) {
+    } catch (err) {
+      console.warn("Charset", charset, "neuspješan:", err.message);
     } finally {
       try { reader.reset(); } catch (_) {}
     }
   }
-
   if (!best) {
-    throw new Error("Kod nije očitan.");
+    throw new Error("Kod nije očitan iz slike (svi charsetovi neuspješni).");
   }
-
   return best;
 }
 
