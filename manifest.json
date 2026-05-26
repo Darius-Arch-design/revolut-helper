@@ -4,12 +4,15 @@
   "start_url": ".",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#000000",
+  "theme_color": "#0f766e",
+  "lang": "hr",
+  "description": "Skeniraj HUB3 2D barkodove s hrvatskih računa i uplatnica, izdvoji podatke i generiraj EPC SEPA QR kod za brzo plaćanje u Revolutu.",
   "icons": [
     {
-      "src": "icon-192.jpg",
+      "src": "icon-192.png",
       "sizes": "192x192",
-      "type": "image/jpeg"
+      "type": "image/png"
     }
-  ]
+  ],
+  "categories": ["finance", "productivity", "utilities"]
 }
