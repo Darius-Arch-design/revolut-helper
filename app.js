@@ -228,6 +228,7 @@ async function decodePdfFile(file) {
   let lastError = null;
   for (let pageNumber = 1; pageNumber <= pagesToTry; pageNumber++) {
     setStatus("Čitam PDF stranicu " + pageNumber + " od " + pagesToTry + "...", "warn");
+    console.log("Počinjem render PDF stranice", pageNumber);
     try {
       const img = await renderPdfPageToImage(pdf, pageNumber);
       const decoded = await decodeImageWithFallback(img);
@@ -246,7 +247,7 @@ async function decodePdfFile(file) {
 
 async function renderPdfPageToImage(pdf, pageNumber) {
   const page = await pdf.getPage(pageNumber);
-  const baseScale = isIOS() ? 1.2 : 2.0;           // ← promijenjeno sa 1.6 → 1.2
+  const baseScale = isIOS() ? 0.9 : 2.0;           // još manje na iOS-u
   const viewport = page.getViewport({ scale: baseScale });
   const outputScale = isIOS() ? 1 : (window.devicePixelRatio || 1);
   const canvas = document.createElement("canvas");
@@ -258,9 +259,17 @@ async function renderPdfPageToImage(pdf, pageNumber) {
   const renderContext = {
     canvasContext: ctx,
     viewport: viewport,
+    intent: "display",
     transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null
   };
-  await page.render(renderContext).promise;
+  console.log("▶️ Render PDF stranice", pageNumber, "na iOS:", isIOS(), "scale:", baseScale);
+  // Timeout od 12 sekundi – ako visi, odbij promise
+  const renderPromise = page.render(renderContext).promise;
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error("Render timeout (12s)")), 12000)
+  );
+  await Promise.race([renderPromise, timeoutPromise]);
+  console.log("✅ Render gotov za stranicu", pageNumber);
   return loadImageFromDataUrl(canvas.toDataURL("image/png"));
 }
 
