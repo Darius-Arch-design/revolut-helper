@@ -10,15 +10,15 @@ Umjesto ručnog prepisivanja IBAN-a, modela, poziva na broj i iznosa – jednost
 
 ##  Značajke
 
-- ✅ Skeniranje HUB3 barkodova (PDF417) iz **slike**, **PDF-a** ili **kamere**
-- ✅ Automatsko izdvajanje svih ključnih podataka (IBAN, primatelj, iznos, model+poziv, opis…)
-- ✅ Generiranje **EPC SEPA QR koda** koji Revolut direktno prepoznaje
-- ✅ Više fallback metoda i charsetova (ISO-8859-2, windows-1250, UTF-8) za pouzdano očitavanje hrvatskih znakova
-- ✅ Image preprocessing (grayscale, threshold, rotacije, kontrast) za bolje rezultate
-- ✅ Podrška za PDF (do 5 stranica)
-- ✅ Čist, responsivni UI na hrvatskom jeziku
-- ✅ PWA – može se instalirati kao aplikacija na telefon
-- ✅ Copy dugmad, dijeljenje QR koda, spremanje u PNG
+-  Skeniranje HUB3 barkodova (PDF417) iz **slike**, **PDF-a** ili **kamere**
+-  Automatsko izdvajanje svih ključnih podataka (IBAN, primatelj, iznos, model+poziv, opis…)
+-  Generiranje **EPC SEPA QR koda** koji Revolut direktno prepoznaje
+-  Više fallback metoda i charsetova (ISO-8859-2, windows-1250, UTF-8) za pouzdano očitavanje hrvatskih znakova
+-  Image preprocessing (grayscale, threshold, rotacije, kontrast) za bolje rezultate
+-  Podrška za PDF (do 5 stranica)
+-  Čist, responsivni UI na hrvatskom jeziku
+-  PWA – može se instalirati kao aplikacija na telefon
+-  Copy dugmad, dijeljenje QR koda, spremanje u PNG
 
 ---
 
