@@ -50,11 +50,3 @@ Umjesto ručnog prepisivanja IBAN-a, modela, poziva na broj i iznosa – jednost
 ##  Instalacija / Korištenje
 
 Jednostavno otvorite `index.html` u pregledniku ili koristite GitHub Pages.
-
-Za lokalni razvoj:
-```bash
-# Kloniraj repo
-git clone https://github.com/Darius-Arch-design/revolut-helper.git
-cd revolut-helper
-
-# Otvori index.html u pregledniku
