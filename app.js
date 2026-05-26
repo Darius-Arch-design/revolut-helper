@@ -47,7 +47,8 @@ const els = {
   copySepaBtn: document.getElementById("copySepaBtn"),
   shareQrBtn: document.getElementById("shareQrBtn"),
   saveQrBtn: document.getElementById("saveQrBtn"),
-  openRevolutBtn: document.getElementById("openRevolutBtn")
+  openRevolutBtn: document.getElementById("openRevolutBtn"),
+  installBtn: document.getElementById("installBtn")
 };
 
 const state = {
@@ -61,12 +62,15 @@ const state = {
   validation: emptyValidation()
 };
 
+let deferredPrompt = null;
+
 init();
 
 function init() {
   bindEvents();
   resetParsedData();
   exposeLegacyFunctions();
+  setupInstallPrompt();
 }
 
 function createCodeReader(charset) {
@@ -103,6 +107,27 @@ function exposeLegacyFunctions() {
   window.copyIBAN = copyIBAN;
   window.copyRef = copyRef;
   window.openRevolut = openRevolut;
+}
+
+function setupInstallPrompt() {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    if (els.installBtn) {
+      els.installBtn.hidden = false;
+      els.installBtn.addEventListener('click', async () => {
+        els.installBtn.hidden = true;
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        console.log(`User response to the install prompt: ${outcome}`);
+        deferredPrompt = null;
+      }, { once: true });
+    }
+  });
+  window.addEventListener('appinstalled', () => {
+    if (els.installBtn) els.installBtn.hidden = true;
+    console.log('PWA installed successfully');
+  });
 }
 
 function emptyPayment() {
