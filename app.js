@@ -3,6 +3,9 @@ const DEFAULT_CAMERA_CHARSET = "ISO-8859-2";
 const HUB3_HEADER_RE = /^HRVHUB3\d$/i;
 const EPC_MAX_BYTES = 331;
 const MAX_PDF_PAGES_TO_SCAN = 5;
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+}
 
 if (window.pdfjsLib) {
   pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -189,8 +192,8 @@ async function onFileSelected(e) {
       processDecodedText(decoded.text, "slika");
     }
   } catch (err) {
-    console.error(err);
-    setStatus("Ne mogu očitati QR/PDF417 iz odabrane datoteke.", "err");
+    console.error("PDF / slika error:", err);
+    setStatus("Greška: " + (err.message || "Ne mogu očitati datoteku."), "err");
   }
 }
 
@@ -203,45 +206,60 @@ async function decodePdfFile(file) {
   if (!window.pdfjsLib) {
     throw new Error("PDF.js nije učitan.");
   }
-
+  try {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  } catch (e) {
+    console.warn("PDF workerSrc nije mogao biti postavljen:", e);
+  }
   const arrayBuffer = await file.arrayBuffer();
-  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-  const pdf = await loadingTask.promise;
+  const loadingTask = pdfjsLib.getDocument({
+    data: arrayBuffer,
+    disableWorker: isIOS()   // KLJUČNO za iPhone
+  });
+  let pdf;
+  try {
+    pdf = await loadingTask.promise;
+  } catch (err) {
+    console.error("PDF.js getDocument failed on iOS:", err);
+    throw new Error("Ne mogu učitati PDF (problem s PDF.js na iPhoneu).");
+  }
   const pagesToTry = Math.min(pdf.numPages, MAX_PDF_PAGES_TO_SCAN);
-
+  let lastError = null;
   for (let pageNumber = 1; pageNumber <= pagesToTry; pageNumber++) {
     setStatus("Čitam PDF stranicu " + pageNumber + " od " + pagesToTry + "...", "warn");
-    const img = await renderPdfPageToImage(pdf, pageNumber);
-
     try {
+      const img = await renderPdfPageToImage(pdf, pageNumber);
       const decoded = await decodeImageWithFallback(img);
       return decoded;
-    } catch (_) {}
+    } catch (err) {
+      lastError = err;
+      console.warn("PDF stranica " + pageNumber + " nije uspjela:", err);
+    }
   }
-
-  throw new Error("Barkod nije pronađen ni na jednoj podržanoj PDF stranici.");
+  throw new Error(
+    "Barkod nije pronađen ni na jednoj PDF stranici. " +
+    (lastError ? lastError.message : "")
+  );
 }
 
 async function renderPdfPageToImage(pdf, pageNumber) {
   const page = await pdf.getPage(pageNumber);
-  const scale = 2.2;
-  const viewport = page.getViewport({ scale });
-  const outputScale = window.devicePixelRatio || 1;
-
+  const baseScale = isIOS() ? 1.6 : 2.2;
+  const viewport = page.getViewport({ scale: baseScale });
+  const outputScale = isIOS() ? 1 : (window.devicePixelRatio || 1);
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-
   canvas.width = Math.floor(viewport.width * outputScale);
   canvas.height = Math.floor(viewport.height * outputScale);
   canvas.style.width = Math.floor(viewport.width) + "px";
   canvas.style.height = Math.floor(viewport.height) + "px";
-
-  await page.render({
+  const renderContext = {
     canvasContext: ctx,
-    viewport,
+    viewport: viewport,
     transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null
-  }).promise;
-
+  };
+  await page.render(renderContext).promise;
   return loadImageFromDataUrl(canvas.toDataURL("image/png"));
 }
 
