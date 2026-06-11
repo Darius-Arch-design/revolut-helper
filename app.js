@@ -4,10 +4,6 @@ const HUB3_HEADER_RE = /^HRVHUB3\d$/i;
 const EPC_MAX_BYTES = 331;
 const MAX_PDF_PAGES_TO_SCAN = 5;
 
-function isIOS() {
-  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-}
-
 if (window.pdfjsLib) {
   pdfjsLib.GlobalWorkerOptions.workerSrc =
     "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -51,8 +47,7 @@ const els = {
   copySepaBtn: document.getElementById("copySepaBtn"),
   shareQrBtn: document.getElementById("shareQrBtn"),
   saveQrBtn: document.getElementById("saveQrBtn"),
-  openRevolutBtn: document.getElementById("openRevolutBtn"),
-  installBtn: document.getElementById("installBtn")
+  openRevolutBtn: document.getElementById("openRevolutBtn")
 };
 
 const state = {
@@ -66,36 +61,12 @@ const state = {
   validation: emptyValidation()
 };
 
-let deferredPrompt = null;
-
 init();
 
 function init() {
   bindEvents();
   resetParsedData();
   exposeLegacyFunctions();
-  setupInstallPrompt();
-}
-
-function setupInstallPrompt() {
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferredPrompt = e;
-    if (els.installBtn) {
-      els.installBtn.hidden = false;
-      els.installBtn.addEventListener('click', async () => {
-        els.installBtn.hidden = true;
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        console.log(`User response to the install prompt: ${outcome}`);
-        deferredPrompt = null;
-      }, { once: true });
-    }
-  });
-  window.addEventListener('appinstalled', () => {
-    if (els.installBtn) els.installBtn.hidden = true;
-    console.log('PWA installed successfully');
-  });
 }
 
 function createCodeReader(charset) {
@@ -104,9 +75,11 @@ function createCodeReader(charset) {
     ZXing.BarcodeFormat.QR_CODE,
     ZXing.BarcodeFormat.PDF_417
   ]);
+
   if (charset) {
     hints.set(ZXing.DecodeHintType.CHARACTER_SET, charset);
   }
+
   return new ZXing.BrowserMultiFormatReader(hints);
 }
 
@@ -139,19 +112,25 @@ function emptyPayment() {
     header: "",
     currency: "EUR",
     amount: "",
+
     payerName: "",
     payerAddress1: "",
     payerAddress2: "",
+
     recipientName: "",
     recipientAddress1: "",
     recipientAddress2: "",
+
     accountRaw: "",
     iban: "",
+
     model: "",
     referenceNumber: "",
     combinedReference: "",
+
     purposeCode: "",
     description: "",
+
     sepaText: "",
     sepaEncodingUsed: "1",
     sepaCharsetLabel: "UTF-8"
@@ -185,8 +164,8 @@ async function onFileSelected(e) {
       processDecodedText(decoded.text, "slika");
     }
   } catch (err) {
-    console.error("PDF / slika error:", err);
-    setStatus("Greška: " + (err.message || "Ne mogu očitati datoteku."), "err");
+    console.error(err);
+    setStatus("Ne mogu očitati QR/PDF417 iz odabrane datoteke.", "err");
   }
 }
 
@@ -195,129 +174,53 @@ function isPdfFile(file) {
   return file.type === "application/pdf" || /\.pdf$/i.test(file.name || "");
 }
 
-/* =========================================================
-   PDF DECODING (nova poboljšana verzija)
-========================================================= */
-
 async function decodePdfFile(file) {
   if (!window.pdfjsLib) {
     throw new Error("PDF.js nije učitan.");
   }
 
-  try {
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-  } catch (e) {
-    console.warn("PDF workerSrc nije mogao biti postavljen:", e);
-  }
-
   const arrayBuffer = await file.arrayBuffer();
-
-  const loadingTask = pdfjsLib.getDocument({
-    data: arrayBuffer,
-    disableWorker: isIOS()
-  });
-
-  let pdf;
-
-  try {
-    pdf = await loadingTask.promise;
-  } catch (err) {
-    console.error("PDF.js getDocument failed:", err);
-    throw new Error("Ne mogu učitati PDF datoteku.");
-  }
-
+  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+  const pdf = await loadingTask.promise;
   const pagesToTry = Math.min(pdf.numPages, MAX_PDF_PAGES_TO_SCAN);
-  let lastError = null;
 
   for (let pageNumber = 1; pageNumber <= pagesToTry; pageNumber++) {
     setStatus("Čitam PDF stranicu " + pageNumber + " od " + pagesToTry + "...", "warn");
+    const img = await renderPdfPageToImage(pdf, pageNumber);
 
     try {
-      const canvas = await renderPdfPageToCanvas(pdf, pageNumber);
-      const decoded = await decodeCanvasWithCharsetFallback(canvas);
-      if (decoded && decoded.text) {
-        return decoded;
-      }
-    } catch (err) {
-      lastError = err;
-      console.error("Greška na PDF stranici " + pageNumber + ":", err);
-    }
+      const decoded = await decodeImageWithFallback(img);
+      return decoded;
+    } catch (_) {}
   }
 
-  throw new Error(
-    "Barkod nije pronađen ni na jednoj PDF stranici. " +
-      (lastError ? "Posljednja greška: " + lastError.message : "")
-  );
+  throw new Error("Barkod nije pronađen ni na jednoj podržanoj PDF stranici.");
 }
 
-async function renderPdfPageToCanvas(pdf, pageNumber) {
+async function renderPdfPageToImage(pdf, pageNumber) {
   const page = await pdf.getPage(pageNumber);
-
-  const baseScale = isIOS() ? 3.5 : 5.0;
-  const viewport = page.getViewport({ scale: baseScale });
+  const scale = 2.2;
+  const viewport = page.getViewport({ scale });
+  const outputScale = window.devicePixelRatio || 1;
 
   const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d", {
-    willReadFrequently: true,
-    alpha: false
-  });
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
-  canvas.width = Math.floor(viewport.width);
-  canvas.height = Math.floor(viewport.height);
+  canvas.width = Math.floor(viewport.width * outputScale);
+  canvas.height = Math.floor(viewport.height * outputScale);
+  canvas.style.width = Math.floor(viewport.width) + "px";
+  canvas.style.height = Math.floor(viewport.height) + "px";
 
   await page.render({
     canvasContext: ctx,
-    viewport: viewport,
-    intent: "print"
+    viewport,
+    transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null
   }).promise;
 
-  enhancePdf417Image(ctx, canvas.width, canvas.height);
-
-  return cropCenter(canvas, 0.92);
+  return loadImageFromDataUrl(canvas.toDataURL("image/png"));
 }
 
-function enhancePdf417Image(ctx, width, height) {
-  const imageData = ctx.getImageData(0, 0, width, height);
-  const data = imageData.data;
-
-  for (let i = 0; i < data.length; i += 4) {
-    let r = data[i];
-    let g = data[i + 1];
-    let b = data[i + 2];
-
-    let gray = 0.299 * r + 0.587 * g + 0.114 * b;
-    gray = ((gray - 128) * 1.8) + 128;
-    gray = gray > 170 ? 255 : 0;
-
-    data[i] = gray;
-    data[i + 1] = gray;
-    data[i + 2] = gray;
-  }
-
-  ctx.putImageData(imageData, 0, 0);
-}
-
-function cropCenter(sourceCanvas, ratio = 0.92) {
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.floor(sourceCanvas.width * ratio);
-  canvas.height = Math.floor(sourceCanvas.height * ratio);
-
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-
-  const sx = (sourceCanvas.width - canvas.width) / 2;
-  const sy = (sourceCanvas.height - canvas.height) / 2;
-
-  ctx.drawImage(
-    sourceCanvas,
-    sx, sy, canvas.width, canvas.height,
-    0, 0, canvas.width, canvas.height
-  );
-
-  return canvas;
-}
-
-async function decodeCanvasWithCharsetFallback(canvas) {
+async function decodeImageWithFallback(img) {
   let best = null;
   let bestScore = -Infinity;
 
@@ -325,8 +228,7 @@ async function decodeCanvasWithCharsetFallback(canvas) {
     const reader = createCodeReader(charset);
 
     try {
-      const result = await reader.decodeFromCanvas(canvas);
-
+      const result = await reader.decodeFromImageElement(img);
       if (result && result.text) {
         const normalized = normalizeRawText(result.text);
         const score = scoreDecodedCandidate(normalized);
@@ -336,21 +238,18 @@ async function decodeCanvasWithCharsetFallback(canvas) {
           bestScore = score;
         }
       }
-    } catch (err) {
-      console.warn("Charset fail:", charset, err.message);
+    } catch (_) {
     } finally {
       try { reader.reset(); } catch (_) {}
     }
   }
 
   if (!best) {
-    throw new Error("PDF417 barkod nije moguće očitati.");
+    throw new Error("Kod nije očitan.");
   }
 
   return best;
 }
-
-/* ---------------- OSTATAK KODA (netaknut) ---------------- */
 
 async function decodeImageFileRobust(file) {
   const source = await loadBitmapFromFile(file);
@@ -402,13 +301,28 @@ async function loadBitmapFromFile(file) {
 function buildImageVariants(source) {
   const variants = [];
 
-  const normal = drawSourceToCanvas(source, { maxSide: 2200, grayscale: false, threshold: false, contrastBoost: 1 });
+  const normal = drawSourceToCanvas(source, {
+    maxSide: 2200,
+    grayscale: false,
+    threshold: false,
+    contrastBoost: 1
+  });
   variants.push(normal);
 
-  const grayscale = drawSourceToCanvas(source, { maxSide: 2200, grayscale: true, threshold: false, contrastBoost: 1.15 });
+  const grayscale = drawSourceToCanvas(source, {
+    maxSide: 2200,
+    grayscale: true,
+    threshold: false,
+    contrastBoost: 1.15
+  });
   variants.push(grayscale);
 
-  const thresholded = drawSourceToCanvas(source, { maxSide: 2200, grayscale: true, threshold: true, contrastBoost: 1.2 });
+  const thresholded = drawSourceToCanvas(source, {
+    maxSide: 2200,
+    grayscale: true,
+    threshold: true,
+    contrastBoost: 1.2
+  });
   variants.push(thresholded);
 
   variants.push(rotateCanvas(normal, 90));
@@ -455,18 +369,23 @@ function drawSourceToCanvas(source, options) {
 
       if (opts.grayscale || opts.threshold) {
         const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-        r = gray; g = gray; b = gray;
+        r = gray;
+        g = gray;
+        b = gray;
       }
 
       if (opts.threshold) {
         const bw = r > 160 ? 255 : 0;
-        r = bw; g = bw; b = bw;
+        r = bw;
+        g = bw;
+        b = bw;
       }
 
       data[i] = r;
       data[i + 1] = g;
       data[i + 2] = b;
     }
+
     ctx.putImageData(imageData, 0, 0);
   }
 
@@ -489,6 +408,36 @@ function rotateCanvas(sourceCanvas, degrees) {
   return canvas;
 }
 
+async function decodeCanvasWithCharsetFallback(canvas) {
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (const charset of CHARSET_CANDIDATES) {
+    const reader = createCodeReader(charset);
+
+    try {
+      const dataUrl = canvas.toDataURL("image/png");
+      const img = await loadImageFromDataUrl(dataUrl);
+      const result = await reader.decodeFromImageElement(img);
+
+      if (result && result.text) {
+        const normalized = normalizeRawText(result.text);
+        const score = scoreDecodedCandidate(normalized);
+
+        if (score > bestScore) {
+          best = { text: result.text, charset };
+          bestScore = score;
+        }
+      }
+    } catch (_) {
+    } finally {
+      try { reader.reset(); } catch (_) {}
+    }
+  }
+
+  return best;
+}
+
 function clampColor(v) {
   return Math.max(0, Math.min(255, Math.round(v)));
 }
@@ -496,17 +445,18 @@ function clampColor(v) {
 function scoreDecodedCandidate(text) {
   const v = text || "";
   let score = 0;
+
   const letters = v.match(/[A-Za-zČĆĐŠŽčćđšž]/g);
   if (letters) score += letters.length * 1.2;
+
   const croatianLetters = v.match(/[čČćĆšŠžŽđĐ]/g);
   if (croatianLetters) score += croatianLetters.length * 4;
+
   const mojibake = v.match(/(Ã.|Ä.|Å.|�)/g);
   if (mojibake) score -= mojibake.length * 8;
+
   return score;
 }
-
-/* ---------------- SVE OSTALE FUNKCIJE (startCamera, processDecodedText, parsing, EPC, render, itd.) ---------------- */
-/* (cijeli ostatak koda je identičan tvom originalu – nije mijenjan) */
 
 async function startCamera() {
   if (state.scanning) return;
@@ -535,7 +485,9 @@ async function startCamera() {
 
     if (els.video) {
       els.video.srcObject = stream;
-      try { await els.video.play(); } catch (_) {}
+      try {
+        await els.video.play();
+      } catch (_) {}
     }
 
     setStatus("Kamera je aktivna. Usmjeri barkod prema kameri.", "warn");
@@ -558,14 +510,20 @@ async function startCamera() {
 }
 
 function stopCamera() {
-  try { if (codeReader) codeReader.reset(); } catch (_) {}
+  try {
+    if (codeReader) codeReader.reset();
+  } catch (_) {}
 
   if (state.mediaStream) {
-    state.mediaStream.getTracks().forEach(track => track.stop());
+    state.mediaStream.getTracks().forEach(function (track) {
+      track.stop();
+    });
     state.mediaStream = null;
   }
 
-  if (els.video && els.video.srcObject) els.video.srcObject = null;
+  if (els.video && els.video.srcObject) {
+    els.video.srcObject = null;
+  }
 
   state.scanning = false;
   state.locked = false;
@@ -610,8 +568,7 @@ function processDecodedText(text, source) {
   updateButtons();
 }
 
-/* ---------------- PARSING, NORMALIZATION, VALIDATION, EPC, RENDER, ACTIONS, UTILS ---------------- */
-/* (svi ostali dijelovi koda su identični tvom originalu – nisu mijenjani) */
+/* ---------------- PARSING ---------------- */
 
 function parseCode(text) {
   const strict = parseHub3Strict(text);
@@ -625,57 +582,31 @@ function parseHub3Strict(text) {
   if (!HUB3_HEADER_RE.test(fields[0])) return null;
 
   const payment = emptyPayment();
+
   payment.parser = "HUB3";
   payment.format = "HUB3";
   payment.header = fields[0];
+
   payment.currency = normalizeCurrency(fields[1]);
   payment.amount = parseHubAmount(fields[2]);
+
   payment.payerName = cleanDisplayField(fields[3], 70);
   payment.payerAddress1 = cleanDisplayField(fields[4], 70);
   payment.payerAddress2 = cleanDisplayField(fields[5], 70);
+
   payment.recipientName = cleanDisplayField(fields[6], 70);
   payment.recipientAddress1 = cleanDisplayField(fields[7], 70);
   payment.recipientAddress2 = cleanDisplayField(fields[8], 70);
+
   payment.accountRaw = cleanDisplayField(fields[9], 50);
   payment.iban = extractValidIbanFromField(payment.accountRaw);
+
   payment.model = normalizeModel(fields[10]);
   payment.referenceNumber = normalizeReference(fields[11]);
   payment.combinedReference = buildCombinedReference(payment.model, payment.referenceNumber);
+
   payment.purposeCode = normalizePurposeCode(fields[12]);
   payment.description = cleanDisplayField(fields[13], 140);
-
-  return payment;
-}
-
-function splitHub3Fields(text) {
-  let fields = text.replace(/\r/g, "\n").split("\n").map(v => v.replace(/\u0000/g, "").trim());
-  while (fields.length && fields[fields.length - 1] === "") fields.pop();
-  if (fields.length > 14) {
-    const first13 = fields.slice(0, 13);
-    const mergedDescription = fields.slice(13).filter(Boolean).join(" ");
-    fields = first13.concat([mergedDescription]);
-  }
-  return fields;
-}
-
-function parseFallback(text) {
-  const payment = emptyPayment();
-  const lines = text.replace(/\r/g, "\n").split("\n").map(x => x.trim()).filter(Boolean);
-
-  payment.parser = "fallback";
-  payment.format = "fallback";
-  payment.header = lines[0] && HUB3_HEADER_RE.test(lines[0]) ? lines[0] : "";
-  payment.currency = findCurrency(lines);
-  payment.amount = findAmountAnywhere(lines);
-  payment.iban = findValidIbanAnywhere(lines);
-  payment.accountRaw = payment.iban || "";
-  payment.model = findModel(lines);
-  payment.referenceNumber = findReference(lines);
-  payment.combinedReference = buildCombinedReference(payment.model, payment.referenceNumber);
-  payment.purposeCode = findPurposeCode(lines);
-  payment.payerName = findLikelyPayer(lines);
-  payment.recipientName = findLikelyRecipient(lines, payment.iban);
-  payment.description = findLikelyDescription(lines, payment);
 
   return payment;
 }
@@ -1689,4 +1620,3 @@ function canvasToBlob(canvas, type) {
     }
   });
 }
-console.log("SEPA Scan for Revolut – app.js učitan (s novim PDF dekodiranjem)");
