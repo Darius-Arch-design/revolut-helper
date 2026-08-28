@@ -43,7 +43,10 @@ const els = {
   rescanBtn: document.getElementById("rescanBtn"),
 
   copyIbanBtn: document.getElementById("copyIbanBtn"),
+  copyRecipientBtn: document.getElementById("copyRecipientBtn"),
+  copyAmountBtn: document.getElementById("copyAmountBtn"),
   copyRefBtn: document.getElementById("copyRefBtn"),
+  copyDescBtn: document.getElementById("copyDescBtn"),
   copySepaBtn: document.getElementById("copySepaBtn"),
   shareQrBtn: document.getElementById("shareQrBtn"),
   saveQrBtn: document.getElementById("saveQrBtn"),
@@ -101,7 +104,10 @@ function bindEvents() {
   if (els.rescanBtn) els.rescanBtn.addEventListener("click", resetAll);
 
   if (els.copyIbanBtn) els.copyIbanBtn.addEventListener("click", copyIBAN);
+  if (els.copyRecipientBtn) els.copyRecipientBtn.addEventListener("click", copyRecipient);
+  if (els.copyAmountBtn) els.copyAmountBtn.addEventListener("click", copyAmount);
   if (els.copyRefBtn) els.copyRefBtn.addEventListener("click", copyRef);
+  if (els.copyDescBtn) els.copyDescBtn.addEventListener("click", copyDescription);
   if (els.copySepaBtn) els.copySepaBtn.addEventListener("click", copySepa);
   if (els.shareQrBtn) els.shareQrBtn.addEventListener("click", shareQrImage);
   if (els.saveQrBtn) els.saveQrBtn.addEventListener("click", saveQrImage);
@@ -1383,12 +1389,18 @@ function setStatus(message, type) {
 
 function updateButtons() {
   const hasIban = !!state.payment.iban;
+  const hasRecipient = !!state.payment.recipientName;
+  const hasAmount = !!state.payment.amount;
   const hasRef = !!state.payment.combinedReference;
+  const hasDescription = !!state.payment.description;
   const hasSepa = !!state.payment.sepaText;
   const hasCanvas = !!(els.qrContainer && els.qrContainer.querySelector("canvas"));
 
   if (els.copyIbanBtn) els.copyIbanBtn.disabled = !hasIban;
+  if (els.copyRecipientBtn) els.copyRecipientBtn.disabled = !hasRecipient;
+  if (els.copyAmountBtn) els.copyAmountBtn.disabled = !hasAmount;
   if (els.copyRefBtn) els.copyRefBtn.disabled = !hasRef;
+  if (els.copyDescBtn) els.copyDescBtn.disabled = !hasDescription;
   if (els.copySepaBtn) els.copySepaBtn.disabled = !hasSepa;
   if (els.shareQrBtn) els.shareQrBtn.disabled = !(hasSepa && hasCanvas);
   if (els.saveQrBtn) els.saveQrBtn.disabled = !(hasSepa && hasCanvas);
@@ -1451,7 +1463,18 @@ function resetAll() {
 
 async function copyIBAN() {
   if (!state.payment.iban) return;
-  await copyText(state.payment.iban, "IBAN kopiran.");
+  await copyText(state.payment.iban, "IBAN kopiran. Sada ga zalijepi u Revolut.");
+}
+
+async function copyRecipient() {
+  if (!state.payment.recipientName) return;
+  await copyText(state.payment.recipientName, "Naziv primatelja kopiran.");
+}
+
+async function copyAmount() {
+  if (!state.payment.amount) return;
+  const amount = Number(state.payment.amount).toFixed(2);
+  await copyText(amount, "Iznos kopiran bez oznake valute.");
 }
 
 async function copyRef() {
@@ -1459,9 +1482,14 @@ async function copyRef() {
   await copyText(state.payment.combinedReference, "Model i poziv kopirani.");
 }
 
+async function copyDescription() {
+  if (!state.payment.description) return;
+  await copyText(state.payment.description, "Opis plaćanja kopiran.");
+}
+
 async function copySepa() {
   if (!state.payment.sepaText) return;
-  await copyText(state.payment.sepaText, "SEPA podaci kopirani.");
+  await copyText(state.payment.sepaText, "EPC podaci kopirani.");
 }
 
 async function copyText(text, successMessage) {

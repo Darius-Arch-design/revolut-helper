@@ -1,52 +1,39 @@
-# SEPA Scan for Revolut
+# Revolut Helper za hrvatske račune
 
-**Praktična web aplikacija (PWA) koja skenira HUB3 2D barkodove s hrvatskih računa i uplatnica te automatski generira EPC SEPA QR kod za brzo plaćanje u Revolutu.**
+Praktična web aplikacija koja skenira HUB3 PDF417 barkodove s hrvatskih računa i uplatnica te izdvaja podatke potrebne za običan bankovni prijenos u Revolutu.
 
-Umjesto ručnog prepisivanja IBAN-a, modela, poziva na broj i iznosa – jednostavno skeniraj barkod s kamere, slike ili PDF-a i dobij sve podatke spremljene za plaćanje.
+**Aplikacija:** https://darius-arch-design.github.io/revolut-helper/
 
-**Live demo:** [https://darius-arch-design.github.io/revolut-helper/](https://darius-arch-design.github.io/revolut-helper/)
+## Što aplikacija radi
 
----
+- skenira HUB3 barkod iz slike, PDF-a ili kamerom
+- izdvaja primatelja, IBAN, iznos, model i poziv na broj, šifru namjene i opis
+- daje zasebne gumbe za kopiranje svakog podatka u Revolut
+- otvara Revolut aplikaciju
+- generira standardni EPC SEPA QR za bankovne aplikacije koje ga podržavaju
+- radi lokalno u pregledniku; podaci se ne šalju na poslužitelj
+- može se instalirati kao PWA i koristiti izvan mreže nakon prvog učitavanja
 
-##  Značajke
+## Plaćanje preko Revoluta
 
--  Skeniranje HUB3 barkodova (PDF417) iz **slike**, **PDF-a** ili **kamere**
--  Automatsko izdvajanje svih ključnih podataka (IBAN, primatelj, iznos, model+poziv, opis…)
--  Generiranje **EPC SEPA QR koda** koji Revolut direktno prepoznaje
--  Više fallback metoda i charsetova (ISO-8859-2, windows-1250, UTF-8) za pouzdano očitavanje hrvatskih znakova
--  Image preprocessing (grayscale, threshold, rotacije, kontrast) za bolje rezultate
--  Podrška za PDF (do 5 stranica)
--  Čist, responsivni UI na hrvatskom jeziku
--  PWA – može se instalirati kao aplikacija na telefon
--  Copy dugmad, dijeljenje QR koda, spremanje u PNG
+1. Skeniraj HUB3 barkod i provjeri očitane podatke.
+2. U Revolutu otvori Plaćanja i odaberi postojeći bankovni račun primatelja ili dodaj novi.
+3. Za novog primatelja kopiraj IBAN i po potrebi naziv primatelja.
+4. Kopiraj iznos bez oznake valute.
+5. U Revolutovo polje Referenca zalijepi model i poziv na broj.
+6. Prije potvrde usporedi sve podatke s izvornim računom.
 
----
+Nakon što je primatelj spremljen u Revolutu, kod sljedećih računa obično treba kopirati samo iznos i referencu.
 
-##  Kako koristiti
+## Važno ograničenje
 
-1. Otvori [demo](https://darius-arch-design.github.io/revolut-helper/)
-2. Odaberi **"Odaberi sliku ili PDF"** ili pokreni **kameru**
-3. Usmjeri kameru na HUB3 barkod na računu/uplatnici
-4. Podaci se automatski očitaju i prikažu
-5. Provjeri podatke (možeš ih ručno ispraviti ako treba)
-6. Klikni **"Otvori Revolut"** ili kopiraj IBAN / model+poziv / SEPA podatke
-7. U Revolutu skeniraj generirani QR ili ručno unesi podatke
+EPC QR izrađen je prema standardu EPC069-12, ali Revolut ne podržava njegovo skeniranje jednako u svim državama i verzijama aplikacije. Za hrvatske Revolut račune pouzdan je postupak kopiranje podataka u običan bankovni prijenos. QR je zadržan za druge bankovne aplikacije koje podržavaju EPC/GiroCode.
 
-**Savjet:** Drži barkod ravno, bez jakog odsjaja i dovoljno blizu kameri.
+## Tehnički detalji
 
----
-
-##  Tehnički detalji
-
-- **Barcode dekodiranje:** ZXing (s više charsetova + custom image processing)
-- **PDF obrada:** PDF.js
-- **QR generiranje:** qrcode.js
-- **Arhitektura:** Čisti HTML + CSS + JavaScript (PWA)
-- **Offline podrška:** Service Worker
-- Sve obrada se događa **lokalno u pregledniku** – podaci ne odlaze na server
-
----
-
-##  Instalacija / Korištenje
-
-Jednostavno otvorite `index.html` u pregledniku ili koristite GitHub Pages.
+- dekodiranje PDF417/QR: ZXing
+- obrada PDF-a: PDF.js
+- generiranje EPC QR-a: qrcode.js
+- arhitektura: HTML, CSS i JavaScript bez poslužiteljskog dijela
+- PWA: manifest i service worker
+- EPC: UTF-8, verzija 002, razina ispravljanja pogrešaka M, najviše 331 bajt

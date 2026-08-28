@@ -1,7 +1,7 @@
 // service-worker.js
-// Service Worker za SEPA Scan for Revolut PWA
+// Service Worker za Revolut Helper PWA
 
-const CACHE_NAME = "sepa-scan-cache-v1.2";
+const CACHE_NAME = "revolut-helper-cache-v1.3";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -46,6 +46,27 @@ self.addEventListener("activate", function (event) {
 self.addEventListener("fetch", function (event) {
   if (event.request.method !== "GET" || !event.request.url.startsWith("http")) return;
 
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
+        .then(function (networkResponse) {
+          if (networkResponse && networkResponse.ok) {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then(function (cache) {
+              cache.put(event.request, responseToCache);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(function () {
+          return caches.match(event.request).then(function (cachedResponse) {
+            return cachedResponse || caches.match("./index.html");
+          });
+        })
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then(function (cachedResponse) {
       if (cachedResponse) return cachedResponse;
@@ -58,14 +79,9 @@ self.addEventListener("fetch", function (event) {
               cache.put(event.request, responseToCache);
             });
           }
-
           return networkResponse;
         })
         .catch(function () {
-          if (event.request.mode === "navigate") {
-            return caches.match("./index.html");
-          }
-
           return new Response("Sadržaj nije dostupan izvan mreže.", {
             status: 503,
             statusText: "Service Unavailable",
