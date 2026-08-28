@@ -8,7 +8,7 @@ Praktična web aplikacija koja skenira HUB3 PDF417 barkodove s hrvatskih računa
 
 - skenira HUB3 barkod iz slike, PDF-a ili kamerom
 - izdvaja primatelja, IBAN, iznos, model i poziv na broj, šifru namjene i opis
-- daje zasebne gumbe za kopiranje svakog podatka u Revolut
+- vodi kroz dva odvojena Revolut koraka: spremanje primatelja pa unos iznosa i reference
 - otvara Revolut aplikaciju
 - za PBZ račune generira kompatibilniji EPC 001 QR s BIC-om PBZGHR2X i transliteriranim tekstom
 - za ostale račune generira standardni EPC 002 QR ako BIC nije poznat
@@ -17,12 +17,17 @@ Praktična web aplikacija koja skenira HUB3 PDF417 barkodove s hrvatskih računa
 
 ## Plaćanje preko Revoluta
 
+Revolut odvaja dodavanje primatelja od unosa podataka plaćanja:
+
 1. Skeniraj HUB3 barkod i provjeri očitane podatke.
-2. U Revolutu otvori Plaćanja i odaberi postojeći bankovni račun primatelja ili dodaj novi.
-3. Za novog primatelja kopiraj IBAN i po potrebi naziv primatelja.
-4. Kopiraj iznos bez oznake valute.
-5. U Revolutovo polje Referenca zalijepi model i poziv na broj.
-6. Prije potvrde usporedi sve podatke s izvornim računom.
+2. U Revolutu otvori Plaćanja → Bankovni prijenos → Dodajte primatelja.
+3. U polje IBAN zalijepi **samo IBAN**. U polje Naziv tvrtke zalijepi naziv primatelja i spremi primatelja.
+4. Odaberi spremljenog primatelja i započni prijenos.
+5. Kopiraj iznos bez oznake valute u polje za iznos.
+6. Tek na ekranu prijenosa u polje Referenca zalijepi HR model i poziv na broj.
+7. Prije potvrde usporedi sve podatke s izvornim računom.
+
+Ako se HR model i poziv zalijepe dok je aktivno polje IBAN, Revolut će njima zamijeniti IBAN i prikazati grešku neispravnog formata. Model i poziv nikada ne idu u IBAN polje.
 
 Nakon što je primatelj spremljen u Revolutu, kod sljedećih računa obično treba kopirati samo iznos i referencu.
 
@@ -37,4 +42,4 @@ EPC QR izrađen je prema standardu EPC069-12, ali Revolut ne podržava njegovo s
 - generiranje EPC QR-a: qrcode.js
 - arhitektura: HTML, CSS i JavaScript bez poslužiteljskog dijela
 - PWA: manifest i service worker
-- EPC: UTF-8, verzija 002, razina ispravljanja pogrešaka M, najviše 331 bajt
+- EPC: UTF-8, verzija 001 s BIC-om za poznate banke ili 002 bez BIC-a, razina ispravljanja pogrešaka M, najviše 331 bajt

@@ -1439,12 +1439,12 @@ function resetAll() {
 
 async function copyIBAN() {
   if (!state.payment.iban) return;
-  await copyText(state.payment.iban, "IBAN kopiran. Sada ga zalijepi u Revolut.");
+  await copyText(state.payment.iban, "IBAN kopiran. U polje IBAN zalijepi samo ovaj podatak, bez HR modela i poziva.");
 }
 
 async function copyRecipient() {
   if (!state.payment.recipientName) return;
-  await copyText(state.payment.recipientName, "Naziv primatelja kopiran.");
+  await copyText(state.payment.recipientName, "Naziv tvrtke kopiran. Nakon IBAN-a zalijepi ga u polje Naziv tvrtke i spremi primatelja.");
 }
 
 async function copyAmount() {
@@ -1455,7 +1455,7 @@ async function copyAmount() {
 
 async function copyRef() {
   if (!state.payment.combinedReference) return;
-  await copyText(state.payment.combinedReference, "Model i poziv kopirani.");
+  await copyText(state.payment.combinedReference, "Referenca kopirana. Ne lijepi je u IBAN; zalijepi je tek nakon spremanja primatelja u polje Referenca.");
 }
 
 async function copyDescription() {
