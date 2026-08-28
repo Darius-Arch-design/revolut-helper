@@ -3,6 +3,9 @@ const DEFAULT_CAMERA_CHARSET = "ISO-8859-2";
 const HUB3_HEADER_RE = /^HRVHUB3\d$/i;
 const EPC_MAX_BYTES = 331;
 const MAX_PDF_PAGES_TO_SCAN = 5;
+const CROATIAN_BANK_BIC_BY_CODE = {
+  "2340009": "PBZGHR2X"
+};
 
 if (window.pdfjsLib) {
   pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -961,105 +964,78 @@ function generateEpcPayload(payment) {
   const amount = payment.amount ? "EUR" + Number(payment.amount).toFixed(2) : "";
   const purposeCode = normalizePurposeCode(payment.purposeCode);
   const combinedReference = buildCombinedReference(payment.model, payment.referenceNumber);
+  const bic = resolveEpcBic(iban);
+  const version = bic ? "001" : "002";
 
   const structuredReference = isIso11649Reference(payment.referenceNumber)
     ? payment.referenceNumber.replace(/\s+/g, "").toUpperCase()
     : "";
 
-  const nameUtf8 = toEpcField(payment.recipientName, 70, {
-    mode: "name",
-    transliterate: false
-  });
-
-  let remittanceUtf8 = "";
-  if (!structuredReference) {
-    remittanceUtf8 = toEpcField(combinedReference, 140, {
-      mode: "text",
-      transliterate: false
-    });
-  }
-
-  let payload = joinEpcFields([
-    "BCD",
-    "002",
-    "1",
-    "SCT",
-    "",
-    nameUtf8,
-    iban,
-    amount,
-    purposeCode,
-    structuredReference,
-    remittanceUtf8,
-    ""
-  ]);
-
-  if (utf8ByteLength(payload) <= EPC_MAX_BYTES) {
-    return {
-      payload,
-      encoding: "1",
-      charsetLabel: "UTF-8"
-    };
-  }
-
-  const nameAscii = toEpcField(payment.recipientName, 70, {
+  const beneficiaryName = toEpcField(payment.recipientName, 70, {
     mode: "name",
     transliterate: true
-  });
+  }).toUpperCase();
 
-  let remittanceAscii = "";
+  let remittance = "";
   if (!structuredReference) {
-    remittanceAscii = toEpcField(combinedReference, 140, {
+    remittance = toEpcField(combinedReference, 140, {
       mode: "text",
       transliterate: true
     });
   }
 
-  payload = joinEpcFields([
+  let payload = joinEpcFields([
     "BCD",
-    "002",
+    version,
     "1",
     "SCT",
-    "",
-    nameAscii,
+    bic,
+    beneficiaryName,
     iban,
     amount,
     purposeCode,
     structuredReference,
-    remittanceAscii,
+    remittance,
     ""
   ]);
 
-  if (utf8ByteLength(payload) <= EPC_MAX_BYTES) {
-    return {
-      payload,
-      encoding: "1",
-      charsetLabel: "UTF-8 / transliterirano"
-    };
+  if (utf8ByteLength(payload) > EPC_MAX_BYTES) {
+    remittance = trimUtf8Bytes(remittance, 70);
+    payload = joinEpcFields([
+      "BCD",
+      version,
+      "1",
+      "SCT",
+      bic,
+      beneficiaryName,
+      iban,
+      amount,
+      purposeCode,
+      structuredReference,
+      remittance,
+      ""
+    ]);
   }
 
-  const shortenedRemittance = trimUtf8Bytes(remittanceAscii, 70);
-
-  payload = joinEpcFields([
-    "BCD",
-    "002",
-    "1",
-    "SCT",
-    "",
-    nameAscii,
-    iban,
-    amount,
-    purposeCode,
-    structuredReference,
-    shortenedRemittance,
-    ""
-  ]);
+  if (utf8ByteLength(payload) > EPC_MAX_BYTES) {
+    throw new Error("EPC sadržaj prelazi dopuštenih 331 bajt.");
+  }
 
   return {
     payload,
     encoding: "1",
-    charsetLabel: "UTF-8 / skraćeno"
+    charsetLabel: bic
+      ? "UTF-8 / EPC 001 / BIC " + bic + " / transliterirano"
+      : "UTF-8 / EPC 002 / transliterirano"
   };
+}
+
+function resolveEpcBic(iban) {
+  const compact = (iban || "").replace(/\s+/g, "").toUpperCase();
+  if (!/^HR\d{19}$/.test(compact)) return "";
+
+  const bankCode = compact.slice(4, 11);
+  return CROATIAN_BANK_BIC_BY_CODE[bankCode] || "";
 }
 
 function joinEpcFields(fields) {

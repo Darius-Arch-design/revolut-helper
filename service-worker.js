@@ -1,7 +1,7 @@
 // service-worker.js
 // Service Worker za Revolut Helper PWA
 
-const CACHE_NAME = "revolut-helper-cache-v1.3";
+const CACHE_NAME = "revolut-helper-cache-v1.4";
 const APP_SHELL = [
   "./",
   "./index.html",

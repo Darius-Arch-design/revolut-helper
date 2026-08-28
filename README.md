@@ -10,7 +10,8 @@ Praktična web aplikacija koja skenira HUB3 PDF417 barkodove s hrvatskih računa
 - izdvaja primatelja, IBAN, iznos, model i poziv na broj, šifru namjene i opis
 - daje zasebne gumbe za kopiranje svakog podatka u Revolut
 - otvara Revolut aplikaciju
-- generira standardni EPC SEPA QR za bankovne aplikacije koje ga podržavaju
+- za PBZ račune generira kompatibilniji EPC 001 QR s BIC-om PBZGHR2X i transliteriranim tekstom
+- za ostale račune generira standardni EPC 002 QR ako BIC nije poznat
 - radi lokalno u pregledniku; podaci se ne šalju na poslužitelj
 - može se instalirati kao PWA i koristiti izvan mreže nakon prvog učitavanja
 
