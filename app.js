@@ -67,6 +67,17 @@ function init() {
   bindEvents();
   resetParsedData();
   exposeLegacyFunctions();
+  registerServiceWorker();
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("./service-worker.js", { scope: "./" }).catch(function (err) {
+      console.warn("Service Worker nije registriran.", err);
+    });
+  });
 }
 
 function createCodeReader(charset) {
@@ -874,6 +885,15 @@ function validatePayment(payment) {
 
   if (!payment.amount) {
     warnings.push("Iznos nije pronađen.");
+  } else {
+    const amount = Number(payment.amount);
+    if (!Number.isFinite(amount) || amount < 0.01 || amount > 999999999.99) {
+      errors.push("Iznos nije valjan za EPC QR.");
+    }
+  }
+
+  if ((payment.currency || "EUR").toUpperCase() !== "EUR") {
+    errors.push("EPC QR podržava samo plaćanja u eurima.");
   }
 
   if (!payment.combinedReference) {
@@ -933,6 +953,7 @@ function findValidIbanAnywhere(lines) {
 function generateEpcPayload(payment) {
   const iban = (payment.iban || "").replace(/\s+/g, "").toUpperCase();
   const amount = payment.amount ? "EUR" + Number(payment.amount).toFixed(2) : "";
+  const purposeCode = normalizePurposeCode(payment.purposeCode);
   const combinedReference = buildCombinedReference(payment.model, payment.referenceNumber);
 
   const structuredReference = isIso11649Reference(payment.referenceNumber)
@@ -952,7 +973,7 @@ function generateEpcPayload(payment) {
     });
   }
 
-  let payload = [
+  let payload = joinEpcFields([
     "BCD",
     "002",
     "1",
@@ -961,11 +982,11 @@ function generateEpcPayload(payment) {
     nameUtf8,
     iban,
     amount,
-    "",
+    purposeCode,
     structuredReference,
     remittanceUtf8,
     ""
-  ].join("\n");
+  ]);
 
   if (utf8ByteLength(payload) <= EPC_MAX_BYTES) {
     return {
@@ -988,7 +1009,7 @@ function generateEpcPayload(payment) {
     });
   }
 
-  payload = [
+  payload = joinEpcFields([
     "BCD",
     "002",
     "1",
@@ -997,11 +1018,11 @@ function generateEpcPayload(payment) {
     nameAscii,
     iban,
     amount,
-    "",
+    purposeCode,
     structuredReference,
     remittanceAscii,
     ""
-  ].join("\n");
+  ]);
 
   if (utf8ByteLength(payload) <= EPC_MAX_BYTES) {
     return {
@@ -1013,7 +1034,7 @@ function generateEpcPayload(payment) {
 
   const shortenedRemittance = trimUtf8Bytes(remittanceAscii, 70);
 
-  payload = [
+  payload = joinEpcFields([
     "BCD",
     "002",
     "1",
@@ -1022,17 +1043,27 @@ function generateEpcPayload(payment) {
     nameAscii,
     iban,
     amount,
-    "",
+    purposeCode,
     structuredReference,
     shortenedRemittance,
     ""
-  ].join("\n");
+  ]);
 
   return {
     payload,
     encoding: "1",
     charsetLabel: "UTF-8 / skraćeno"
   };
+}
+
+function joinEpcFields(fields) {
+  const normalizedFields = fields.slice();
+
+  while (normalizedFields.length && normalizedFields[normalizedFields.length - 1] === "") {
+    normalizedFields.pop();
+  }
+
+  return normalizedFields.join("\n");
 }
 
 function isIso11649Reference(value) {
